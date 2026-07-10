@@ -165,6 +165,9 @@ private suspend fun exportAnnotations(
                     val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                         .format(Date(ann.timestamp))
                     contentBuilder.append("  [$time] Color: $colorName\n")
+                    if (ann.note.isNotBlank()) {
+                        contentBuilder.append("  Note: \"${ann.note}\"\n")
+                    }
                     if (ann.text.isNotBlank()) {
                         contentBuilder.append("  Text: \"${ann.text}\"\n")
                     }
