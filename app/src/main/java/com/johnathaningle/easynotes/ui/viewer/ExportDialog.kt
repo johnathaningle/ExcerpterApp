@@ -1,9 +1,10 @@
 package com.johnathaningle.easynotes.ui.viewer
 
+import android.content.ContentValues
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.pdf.PdfDocument
-import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -16,7 +17,6 @@ import com.johnathaningle.easynotes.EasyNotesApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -141,50 +141,59 @@ private suspend fun exportAnnotations(
                 return@withContext
             }
 
-            // Create a simple text file with annotation data
             val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
             val fileName = "easynotes_export_${dateFormat.format(Date())}.txt"
 
-            val exportDir = File(context.filesDir, "exports")
-            exportDir.mkdirs()
+            val contentBuilder = StringBuilder()
+            contentBuilder.append("Easy Notes Export\n")
+            contentBuilder.append("Generated: ${dateFormat.format(Date())}\n")
+            contentBuilder.append("PDF: $pdfUri\n")
+            contentBuilder.append("Total annotations: ${annotations.size}\n")
+            contentBuilder.append("\n--- Annotations ---\n\n")
 
-            val exportFile = File(exportDir, fileName)
-            exportFile.bufferedWriter().use { writer ->
-                writer.write("Easy Notes Export\n")
-                writer.write("Generated: ${dateFormat.format(Date())}\n")
-                writer.write("PDF: $pdfUri\n")
-                writer.write("Total annotations: ${annotations.size}\n")
-                writer.write("\n--- Annotations ---\n\n")
-
-                annotations.groupBy { it.pageNumber }.forEach { (page, pageAnnotations) ->
-                    writer.write("Page ${page + 1}:\n")
-                    pageAnnotations.forEach { ann ->
-                        val colorName = when (ann.color) {
-                            0xFFFF0000L -> "Red"
-                            0xFF00C853L -> "Green"
-                            0xFFFFEB3BL -> "Yellow"
-                            0xFF2196F3L -> "Blue"
-                            0xFF9C27B0L -> "Purple"
-                            else -> "Custom"
-                        }
-                        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-                            .format(Date(ann.timestamp))
-                        writer.write("  [$time] Color: $colorName\n")
-                        if (ann.text.isNotBlank()) {
-                            writer.write("  Text: \"${ann.text}\"\n")
-                        }
-                        writer.write("\n")
+            annotations.groupBy { it.pageNumber }.forEach { (page, pageAnnotations) ->
+                contentBuilder.append("Page ${page + 1}:\n")
+                pageAnnotations.forEach { ann ->
+                    val colorName = when (ann.color) {
+                        0xFFFF0000L -> "Red"
+                        0xFF00C853L -> "Green"
+                        0xFFFFEB3BL -> "Yellow"
+                        0xFF2196F3L -> "Blue"
+                        0xFF9C27B0L -> "Purple"
+                        else -> "Custom"
                     }
-                    writer.write("\n")
+                    val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                        .format(Date(ann.timestamp))
+                    contentBuilder.append("  [$time] Color: $colorName\n")
+                    if (ann.text.isNotBlank()) {
+                        contentBuilder.append("  Text: \"${ann.text}\"\n")
+                    }
+                    contentBuilder.append("\n")
+                }
+                contentBuilder.append("\n")
+            }
+
+            val resolver = context.contentResolver
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 }
             }
 
-            withContext(Dispatchers.Main) {
-                Toast.makeText(
-                    context,
-                    "Exported to: ${exportFile.absolutePath}",
-                    Toast.LENGTH_LONG
-                ).show()
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(contentBuilder.toString().toByteArray())
+                }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Exported to Downloads folder", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Export failed: could not create file", Toast.LENGTH_SHORT).show()
+                }
             }
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
