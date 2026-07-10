@@ -28,5 +28,6 @@ data class Annotation(
     val endY: Float,
     val color: Long,
     val text: String = "",
+    val note: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )

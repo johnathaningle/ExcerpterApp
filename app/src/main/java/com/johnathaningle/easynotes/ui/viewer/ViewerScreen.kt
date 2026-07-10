@@ -34,6 +34,7 @@ fun ViewerScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var showExportDialog by remember { mutableStateOf(false) }
+    var showHighlightsDialog by remember { mutableStateOf(false) }
     var longPressStart by remember { mutableStateOf<Offset?>(null) }
     var longPressEnd by remember { mutableStateOf<Offset?>(null) }
     var showColorPicker by remember { mutableStateOf(false) }
@@ -46,6 +47,19 @@ fun ViewerScreen(
         ExportDialog(
             pdfUri = pdfUri,
             onDismiss = { showExportDialog = false }
+        )
+    }
+
+    if (showHighlightsDialog) {
+        HighlightsDialog(
+            annotations = state.annotations,
+            onDelete = { viewModel.deleteAnnotation(it) },
+            onUpdateNote = { annotation, note -> viewModel.updateNote(annotation, note) },
+            onNavigateToPage = { page ->
+                viewModel.goToPage(page)
+                showHighlightsDialog = false
+            },
+            onDismiss = { showHighlightsDialog = false }
         )
     }
 
@@ -69,6 +83,9 @@ fun ViewerScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = { showHighlightsDialog = true }) {
+                        Text("Highlights")
+                    }
                     TextButton(onClick = { showExportDialog = true }) {
                         Text("Export")
                     }

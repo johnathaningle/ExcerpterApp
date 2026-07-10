@@ -11,7 +11,7 @@ import com.johnathaningle.easynotes.data.model.PdfDocument
 
 @Database(
     entities = [PdfDocument::class, Annotation::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,6 +25,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE annotations ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -34,7 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "easynotes.db"
-                ).addMigrations(MIGRATION_1_2).build()
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
                 INSTANCE = instance
                 instance
             }

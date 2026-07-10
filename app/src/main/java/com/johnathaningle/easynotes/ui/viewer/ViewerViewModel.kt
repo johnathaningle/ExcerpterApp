@@ -212,6 +212,29 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun deleteAnnotation(annotation: Annotation) {
+        viewModelScope.launch {
+            repository.deleteAnnotation(annotation)
+            _state.value = _state.value.copy(
+                annotations = _state.value.annotations - annotation,
+                undoStack = _state.value.undoStack - annotation,
+                redoStack = _state.value.redoStack - annotation
+            )
+        }
+    }
+
+    fun updateNote(annotation: Annotation, note: String) {
+        viewModelScope.launch {
+            val updated = annotation.copy(note = note)
+            repository.updateAnnotation(updated)
+            _state.value = _state.value.copy(
+                annotations = _state.value.annotations.map {
+                    if (it.id == annotation.id) updated else it
+                }
+            )
+        }
+    }
+
     fun setSelectedColor(color: Long) {
         sessionPrefs.lastSelectedColor = color
         _state.value = _state.value.copy(selectedColor = color)
