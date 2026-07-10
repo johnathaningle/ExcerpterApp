@@ -1,8 +1,10 @@
 package com.johnathaningle.easynotes.ui.home
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -31,11 +33,15 @@ fun HomeScreen(
 ) {
     val documents by viewModel.documents.collectAsState()
     var showDeleteDialog by remember { mutableStateOf<PdfDocument?>(null) }
+    val context = LocalContext.current
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let {
+            context.contentResolver.takePersistableUriPermission(
+                it, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
             val fileName = uri.lastPathSegment ?: "document.pdf"
             viewModel.addPdf(it, fileName)
             onPdfSelected(it.toString())

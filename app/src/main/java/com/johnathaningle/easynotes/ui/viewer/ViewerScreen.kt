@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -97,7 +98,31 @@ fun ViewerScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            state.pageBitmap?.let { bitmap ->
+            state.errorMessage?.let { message ->
+                Column(
+                    modifier = Modifier.align(androidx.compose.ui.Alignment.Center),
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureAsPdf,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedButton(onClick = onBack) {
+                        Text("Go Back")
+                    }
+                }
+            } ?: state.pageBitmap?.let { bitmap ->
                 val imageBitmap = bitmap.asImageBitmap()
 
                 Box(

@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.johnathaningle.easynotes.EasyNotesApp
@@ -25,7 +26,8 @@ data class ViewerState(
     val redoStack: List<Annotation> = emptyList(),
     val isScrollLocked: Boolean = false,
     val isHighlightEnabled: Boolean = true,
-    val selectedColor: Long = 0xFFFF0000
+    val selectedColor: Long = 0xFFFF0000,
+    val errorMessage: String? = null
 )
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
@@ -76,7 +78,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     renderPage(0)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("ViewerViewModel", "Failed to open PDF: $uri", e)
+                    _state.value = _state.value.copy(
+                        errorMessage = "Unable to open PDF: ${e.message}"
+                    )
                 }
             }
 
