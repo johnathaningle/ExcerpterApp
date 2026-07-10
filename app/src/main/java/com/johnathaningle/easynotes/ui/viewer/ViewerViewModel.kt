@@ -146,9 +146,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun addAnnotation(annotation: Annotation) {
         viewModelScope.launch {
+            val id = repository.insertAnnotation(annotation)
+            val saved = annotation.copy(id = id)
+            _state.value = _state.value.copy(
+                annotations = _state.value.annotations + saved,
+                undoStack = _state.value.undoStack + saved,
+                redoStack = emptyList()
+            )
+
             val uri = currentPdfUri ?: return@launch
             val context = getApplication<Application>().applicationContext
-
             val extractedText = withContext(Dispatchers.IO) {
                 PdfTextExtractor.extractTextFromRegion(
                     context = context,
@@ -161,13 +168,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
 
-            val withText = annotation.copy(text = extractedText)
-            val id = repository.insertAnnotation(withText)
-            val saved = withText.copy(id = id)
+            val withText = saved.copy(text = extractedText)
+            repository.updateAnnotation(withText)
             _state.value = _state.value.copy(
-                annotations = _state.value.annotations + saved,
-                undoStack = _state.value.undoStack + saved,
-                redoStack = emptyList()
+                annotations = _state.value.annotations.map {
+                    if (it.id == id) withText else it
+                },
+                undoStack = _state.value.undoStack.map {
+                    if (it.id == id) withText else it
+                }
             )
         }
     }

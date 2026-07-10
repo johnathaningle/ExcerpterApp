@@ -39,6 +39,9 @@ class PdfRepository(
     suspend fun insertAnnotation(annotation: Annotation): Long =
         annotationDao.insertAnnotation(annotation)
 
+    suspend fun updateAnnotation(annotation: Annotation) =
+        annotationDao.updateAnnotation(annotation)
+
     suspend fun deleteAnnotation(annotation: Annotation) =
         annotationDao.deleteAnnotation(annotation)
 
