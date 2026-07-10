@@ -5,7 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -154,7 +154,7 @@ fun ViewerScreen(
                             }
                             .pointerInput(pdfUri, state.currentPage, state.isScrollLocked, state.selectedColor) {
                                 if (state.isScrollLocked) {
-                                    detectDragGesturesAfterLongPress(
+                                    detectDragGestures(
                                         onDragStart = { offset ->
                                             longPressStart = offset
                                             longPressEnd = offset
