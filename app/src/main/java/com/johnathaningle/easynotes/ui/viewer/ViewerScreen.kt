@@ -4,7 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -124,19 +124,11 @@ fun ViewerScreen(
                 }
             } ?: state.pageBitmap?.let { bitmap ->
                 val imageBitmap = bitmap.asImageBitmap()
+                var dragOffsetX by remember { mutableStateOf(0f) }
+                val swipeThreshold = with(LocalDensity.current) { 100.dp.toPx() }
 
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (state.isScrollLocked) {
-                                Modifier.pointerInput(Unit) {
-                                    detectTransformGestures { _, _, _, _ -> }
-                                }
-                            } else {
-                                Modifier
-                            }
-                        )
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     Image(
                         bitmap = imageBitmap,
@@ -147,9 +139,21 @@ fun ViewerScreen(
                                 onClick = { },
                                 onLongClick = { }
                             )
-                            .pointerInput(state.currentPage) {
-                                detectTransformGestures { _, pan, _, _ ->
-                                    // Pan handling for page navigation when scroll is locked
+                            .pointerInput(state.currentPage, state.isScrollLocked) {
+                                detectDragGestures(
+                                    onDragEnd = { dragOffsetX = 0f },
+                                    onDragCancel = { dragOffsetX = 0f }
+                                ) { change, dragAmount ->
+                                    if (state.isScrollLocked) return@detectDragGestures
+                                    change.consume()
+                                    dragOffsetX += dragAmount.x
+                                    if (dragOffsetX > swipeThreshold) {
+                                        viewModel.previousPage()
+                                        dragOffsetX = 0f
+                                    } else if (dragOffsetX < -swipeThreshold) {
+                                        viewModel.nextPage()
+                                        dragOffsetX = 0f
+                                    }
                                 }
                             },
                         contentScale = ContentScale.Fit
