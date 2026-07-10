@@ -1,16 +1,20 @@
 package com.johnathaningle.easynotes.ui.home
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -18,10 +22,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.johnathaningle.easynotes.data.model.PdfDocument
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -42,7 +50,19 @@ fun HomeScreen(
             context.contentResolver.takePersistableUriPermission(
                 it, Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
-            val fileName = uri.lastPathSegment ?: "document.pdf"
+            val fileName = try {
+                val cursor = context.contentResolver.query(
+                    uri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                    null, null, null
+                )
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        it.getString(0) ?: "document.pdf"
+                    } else "document.pdf"
+                } ?: "document.pdf"
+            } catch (e: Exception) {
+                "document.pdf"
+            }
             viewModel.addPdf(it, fileName)
             onPdfSelected(it.toString())
         }
@@ -124,6 +144,18 @@ fun PdfGridItem(
     onLongClick: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+    val bitmap = remember(document.thumbnailUri) {
+        if (document.thumbnailUri.isNotEmpty()) {
+            try {
+                val file = File(document.thumbnailUri)
+                if (file.exists()) {
+                    BitmapFactory.decodeFile(document.thumbnailUri)
+                } else null
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+    }
 
     Card(
         modifier = Modifier
@@ -147,12 +179,23 @@ fun PdfGridItem(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.PictureAsPdf,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = document.fileName,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(4.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PictureAsPdf,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             Column {

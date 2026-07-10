@@ -10,5 +10,6 @@ data class PdfDocument(
     val fileName: String,
     val dateAdded: Long = System.currentTimeMillis(),
     val lastOpened: Long = System.currentTimeMillis(),
-    val pageCount: Int = 0
+    val pageCount: Int = 0,
+    val thumbnailUri: String = ""
 )
