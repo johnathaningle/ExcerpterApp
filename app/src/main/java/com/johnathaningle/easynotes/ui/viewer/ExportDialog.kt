@@ -169,10 +169,11 @@ private suspend fun exportAnnotations(
                         }
                         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                             .format(Date(ann.timestamp))
-                        writer.write(
-                            "  [$time] Color: $colorName " +
-                            "at (${ann.startX}, ${ann.startY}) - (${ann.endX}, ${ann.endY})\n"
-                        )
+                        writer.write("  [$time] Color: $colorName\n")
+                        if (ann.text.isNotBlank()) {
+                            writer.write("  Text: \"${ann.text}\"\n")
+                        }
+                        writer.write("\n")
                     }
                     writer.write("\n")
                 }

@@ -37,12 +37,10 @@ fun BottomToolbar(
     canUndo: Boolean,
     canRedo: Boolean,
     isScrollLocked: Boolean,
-    isHighlightEnabled: Boolean,
     onColorSelected: (Long) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onToggleScrollLock: () -> Unit,
-    onToggleHighlight: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -108,16 +106,6 @@ fun BottomToolbar(
                     contentDescription = "Toggle scroll lock",
                     tint = if (isScrollLocked) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            // Highlight toggle
-            IconButton(onClick = onToggleHighlight) {
-                Icon(
-                    imageVector = Icons.Default.Highlight,
-                    contentDescription = "Toggle highlight mode",
-                    tint = if (isHighlightEnabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                 )
             }
         }

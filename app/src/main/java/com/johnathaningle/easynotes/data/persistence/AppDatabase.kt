@@ -4,12 +4,14 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.johnathaningle.easynotes.data.model.Annotation
 import com.johnathaningle.easynotes.data.model.PdfDocument
 
 @Database(
     entities = [PdfDocument::class, Annotation::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -17,6 +19,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun annotationDao(): AnnotationDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE annotations ADD COLUMN text TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -26,7 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "easynotes.db"
-                ).build()
+                ).addMigrations(MIGRATION_1_2).build()
                 INSTANCE = instance
                 instance
             }

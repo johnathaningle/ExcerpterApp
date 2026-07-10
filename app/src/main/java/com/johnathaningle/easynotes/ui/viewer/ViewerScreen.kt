@@ -1,10 +1,12 @@
 package com.johnathaningle.easynotes.ui.viewer
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -13,16 +15,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.johnathaningle.easynotes.data.model.Annotation
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -32,7 +33,6 @@ fun ViewerScreen(
     viewModel: ViewerViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
-    val scope = rememberCoroutineScope()
     var showExportDialog by remember { mutableStateOf(false) }
     var longPressStart by remember { mutableStateOf<Offset?>(null) }
     var longPressEnd by remember { mutableStateOf<Offset?>(null) }
@@ -84,12 +84,10 @@ fun ViewerScreen(
                 canUndo = state.undoStack.isNotEmpty(),
                 canRedo = state.redoStack.isNotEmpty(),
                 isScrollLocked = state.isScrollLocked,
-                isHighlightEnabled = state.isHighlightEnabled,
                 onColorSelected = { viewModel.setSelectedColor(it) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
-                onToggleScrollLock = { viewModel.toggleScrollLock() },
-                onToggleHighlight = { viewModel.toggleHighlightEnabled() }
+                onToggleScrollLock = { viewModel.toggleScrollLock() }
             )
         }
     ) { innerPadding ->
@@ -124,7 +122,7 @@ fun ViewerScreen(
                 }
             } ?: state.pageBitmap?.let { bitmap ->
                 val imageBitmap = bitmap.asImageBitmap()
-                var dragOffsetX by remember { mutableStateOf(0f) }
+                var dragOffsetX by remember { mutableFloatStateOf(0f) }
                 val swipeThreshold = with(LocalDensity.current) { 100.dp.toPx() }
 
                 Box(
@@ -135,25 +133,65 @@ fun ViewerScreen(
                         contentDescription = "PDF page ${state.currentPage + 1}",
                         modifier = Modifier
                             .fillMaxSize()
-                            .combinedClickable(
-                                onClick = { },
-                                onLongClick = { }
-                            )
-                            .pointerInput(state.currentPage, state.isScrollLocked) {
-                                detectDragGestures(
-                                    onDragEnd = { dragOffsetX = 0f },
-                                    onDragCancel = { dragOffsetX = 0f }
-                                ) { change, dragAmount ->
-                                    if (state.isScrollLocked) return@detectDragGestures
-                                    change.consume()
-                                    dragOffsetX += dragAmount.x
-                                    if (dragOffsetX > swipeThreshold) {
-                                        viewModel.previousPage()
-                                        dragOffsetX = 0f
-                                    } else if (dragOffsetX < -swipeThreshold) {
-                                        viewModel.nextPage()
-                                        dragOffsetX = 0f
-                                    }
+                            .pointerInput(pdfUri, state.currentPage, state.isScrollLocked) {
+                                if (!state.isScrollLocked) {
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { _ -> },
+                                        onDragEnd = { },
+                                        onDragCancel = { dragOffsetX = 0f },
+                                        onHorizontalDrag = { _, dragAmount ->
+                                            dragOffsetX += dragAmount
+                                            if (dragOffsetX > swipeThreshold) {
+                                                viewModel.previousPage()
+                                                dragOffsetX = 0f
+                                            } else if (dragOffsetX < -swipeThreshold) {
+                                                viewModel.nextPage()
+                                                dragOffsetX = 0f
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            .pointerInput(pdfUri, state.currentPage, state.isScrollLocked, state.selectedColor) {
+                                if (state.isScrollLocked) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { offset ->
+                                            longPressStart = offset
+                                            longPressEnd = offset
+                                        },
+                                        onDrag = { change, _ ->
+                                            longPressEnd = change.position
+                                            change.consume()
+                                        },
+                                        onDragEnd = {
+                                            val start = longPressStart
+                                            val end = longPressEnd
+                                            longPressStart = null
+                                            longPressEnd = null
+
+                                            if (start != null && end != null) {
+                                                val w = size.width.toFloat()
+                                                val h = size.height.toFloat()
+                                                if (w > 0 && h > 0) {
+                                                    viewModel.addAnnotation(
+                                                        Annotation(
+                                                            pdfUri = pdfUri,
+                                                            pageNumber = state.currentPage,
+                                                            startX = start.x / w,
+                                                            startY = start.y / h,
+                                                            endX = end.x / w,
+                                                            endY = end.y / h,
+                                                            color = state.selectedColor
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            longPressStart = null
+                                            longPressEnd = null
+                                        }
+                                    )
                                 }
                             },
                         contentScale = ContentScale.Fit
@@ -165,10 +203,21 @@ fun ViewerScreen(
                     }
                     AnnotationOverlay(annotations = pageAnnotations)
 
-                    // Long-press highlight indicator
+                    // Highlight preview while dragging
                     longPressStart?.let { start ->
                         longPressEnd?.let { end ->
-                            // Show a preview of the highlight being created
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val color = androidx.compose.ui.graphics.Color(state.selectedColor).copy(alpha = 0.4f)
+                                val left = minOf(start.x, end.x)
+                                val top = minOf(start.y, end.y)
+                                val width = kotlin.math.abs(end.x - start.x)
+                                val height = kotlin.math.abs(end.y - start.y)
+                                drawRect(
+                                    color = color,
+                                    topLeft = Offset(left, top),
+                                    size = Size(width, height)
+                                )
+                            }
                         }
                     }
                 }
@@ -262,7 +311,7 @@ fun ColorPickerDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(customColors.size) { index ->
-                        val (color, name) = customColors[index]
+                        val (color, _) = customColors[index]
                         Box(
                             modifier = Modifier
                                 .size(48.dp)

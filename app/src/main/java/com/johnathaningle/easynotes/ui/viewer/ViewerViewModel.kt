@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.johnathaningle.easynotes.EasyNotesApp
 import com.johnathaningle.easynotes.data.model.Annotation
+import com.johnathaningle.easynotes.util.PdfTextExtractor
 import com.johnathaningle.easynotes.util.SessionPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,6 @@ data class ViewerState(
     val undoStack: List<Annotation> = emptyList(),
     val redoStack: List<Annotation> = emptyList(),
     val isScrollLocked: Boolean = false,
-    val isHighlightEnabled: Boolean = true,
     val selectedColor: Long = 0xFFFF0000,
     val errorMessage: String? = null
 )
@@ -39,12 +39,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var pdfRenderer: PdfRenderer? = null
     private var currentFileDescriptor: android.os.ParcelFileDescriptor? = null
+    private var currentPdfUri: String? = null
 
     val selectedColor: Long get() = sessionPrefs.lastSelectedColor
 
     fun loadPdf(uri: String) {
         viewModelScope.launch {
             sessionPrefs.lastOpenedPdfUri = uri
+            currentPdfUri = uri
             val context = getApplication<Application>().applicationContext
 
             withContext(Dispatchers.IO) {
@@ -144,8 +146,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun addAnnotation(annotation: Annotation) {
         viewModelScope.launch {
-            val id = repository.insertAnnotation(annotation)
-            val saved = annotation.copy(id = id)
+            val uri = currentPdfUri ?: return@launch
+            val context = getApplication<Application>().applicationContext
+
+            val extractedText = withContext(Dispatchers.IO) {
+                PdfTextExtractor.extractTextFromRegion(
+                    context = context,
+                    pdfUri = uri,
+                    pageNumber = annotation.pageNumber,
+                    startX = annotation.startX,
+                    startY = annotation.startY,
+                    endX = annotation.endX,
+                    endY = annotation.endY
+                )
+            }
+
+            val withText = annotation.copy(text = extractedText)
+            val id = repository.insertAnnotation(withText)
+            val saved = withText.copy(id = id)
             _state.value = _state.value.copy(
                 annotations = _state.value.annotations + saved,
                 undoStack = _state.value.undoStack + saved,
@@ -192,10 +210,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleScrollLock() {
         _state.value = _state.value.copy(isScrollLocked = !_state.value.isScrollLocked)
-    }
-
-    fun toggleHighlightEnabled() {
-        _state.value = _state.value.copy(isHighlightEnabled = !_state.value.isHighlightEnabled)
     }
 
     override fun onCleared() {
