@@ -9,7 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.johnathaningle.easynotes.EasyNotesApp
 import com.johnathaningle.easynotes.data.model.Annotation
-import com.johnathaningle.easynotes.util.PdfTextExtractor
+import com.johnathaningle.easynotes.util.MlKitTextExtractor
 import com.johnathaningle.easynotes.util.SessionPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -157,15 +157,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val uri = currentPdfUri ?: return@launch
             val context = getApplication<Application>().applicationContext
             val extractedText = withContext(Dispatchers.IO) {
-                PdfTextExtractor.extractTextFromRegion(
-                    context = context,
-                    pdfUri = uri,
-                    pageNumber = annotation.pageNumber,
-                    startX = annotation.startX,
-                    startY = annotation.startY,
-                    endX = annotation.endX,
-                    endY = annotation.endY
-                )
+                try {
+                    val task = MlKitTextExtractor.extractTextFromRegion(
+                        context = context,
+                        pdfUri = uri,
+                        pageNumber = annotation.pageNumber,
+                        startX = annotation.startX,
+                        startY = annotation.startY,
+                        endX = annotation.endX,
+                        endY = annotation.endY
+                    )
+                    com.google.android.gms.tasks.Tasks.await(task)
+                } catch (e: Exception) {
+                    ""
+                }
             }
 
             val withText = saved.copy(text = extractedText)
@@ -248,5 +253,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         super.onCleared()
         pdfRenderer?.close()
         currentFileDescriptor?.close()
+        MlKitTextExtractor.close()
     }
 }

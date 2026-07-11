@@ -52,6 +52,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.pdfbox.android)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

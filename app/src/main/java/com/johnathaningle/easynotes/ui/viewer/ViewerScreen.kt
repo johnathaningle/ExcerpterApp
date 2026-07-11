@@ -19,11 +19,20 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.johnathaningle.easynotes.data.model.Annotation
+
+private data class RenderedBitmapBounds(
+    val offsetX: Float,
+    val offsetY: Float,
+    val renderedWidth: Float,
+    val renderedHeight: Float
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -141,10 +150,33 @@ fun ViewerScreen(
                 val imageBitmap = bitmap.asImageBitmap()
                 var dragOffsetX by remember { mutableFloatStateOf(0f) }
                 val swipeThreshold = with(LocalDensity.current) { 100.dp.toPx() }
+                var composableSize by remember { mutableStateOf(IntSize.Zero) }
 
                 Box(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { composableSize = it }
                 ) {
+                    val bitmapWidth = bitmap.width.toFloat()
+                    val bitmapHeight = bitmap.height.toFloat()
+
+                    val renderedBounds = remember(composableSize, bitmapWidth, bitmapHeight) {
+                        if (composableSize.width == 0 || composableSize.height == 0 ||
+                            bitmapWidth == 0f || bitmapHeight == 0f
+                        ) {
+                            null
+                        } else {
+                            val cw = composableSize.width.toFloat()
+                            val ch = composableSize.height.toFloat()
+                            val scale = minOf(cw / bitmapWidth, ch / bitmapHeight)
+                            val rw = bitmapWidth * scale
+                            val rh = bitmapHeight * scale
+                            val ox = (cw - rw) / 2f
+                            val oy = (ch - rh) / 2f
+                            RenderedBitmapBounds(ox, oy, rw, rh)
+                        }
+                    }
+
                     Image(
                         bitmap = imageBitmap,
                         contentDescription = "PDF page ${state.currentPage + 1}",
@@ -186,18 +218,21 @@ fun ViewerScreen(
                                             longPressStart = null
                                             longPressEnd = null
 
-                                            if (start != null && end != null) {
-                                                val w = size.width.toFloat()
-                                                val h = size.height.toFloat()
-                                                if (w > 0 && h > 0) {
+                                            if (start != null && end != null && renderedBounds != null) {
+                                                val b = renderedBounds
+                                                if (b.renderedWidth > 0 && b.renderedHeight > 0) {
+                                                    val sx = ((start.x - b.offsetX) / b.renderedWidth).coerceIn(0f, 1f)
+                                                    val sy = ((start.y - b.offsetY) / b.renderedHeight).coerceIn(0f, 1f)
+                                                    val ex = ((end.x - b.offsetX) / b.renderedWidth).coerceIn(0f, 1f)
+                                                    val ey = ((end.y - b.offsetY) / b.renderedHeight).coerceIn(0f, 1f)
                                                     viewModel.addAnnotation(
                                                         Annotation(
                                                             pdfUri = pdfUri,
                                                             pageNumber = state.currentPage,
-                                                            startX = start.x / w,
-                                                            startY = start.y / h,
-                                                            endX = end.x / w,
-                                                            endY = end.y / h,
+                                                            startX = sx,
+                                                            startY = sy,
+                                                            endX = ex,
+                                                            endY = ey,
                                                             color = state.selectedColor
                                                         )
                                                     )
@@ -218,22 +253,36 @@ fun ViewerScreen(
                     val pageAnnotations = state.annotations.filter {
                         it.pageNumber == state.currentPage
                     }
-                    AnnotationOverlay(annotations = pageAnnotations)
+                    renderedBounds?.let { b ->
+                        AnnotationOverlay(
+                            annotations = pageAnnotations,
+                            bitmapOffsetX = b.offsetX,
+                            bitmapOffsetY = b.offsetY,
+                            bitmapRenderedWidth = b.renderedWidth,
+                            bitmapRenderedHeight = b.renderedHeight
+                        )
+                    }
 
                     // Highlight preview while dragging
                     longPressStart?.let { start ->
                         longPressEnd?.let { end ->
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val color = androidx.compose.ui.graphics.Color(state.selectedColor).copy(alpha = 0.4f)
-                                val left = minOf(start.x, end.x)
-                                val top = minOf(start.y, end.y)
-                                val width = kotlin.math.abs(end.x - start.x)
-                                val height = kotlin.math.abs(end.y - start.y)
-                                drawRect(
-                                    color = color,
-                                    topLeft = Offset(left, top),
-                                    size = Size(width, height)
-                                )
+                            renderedBounds?.let { b ->
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val color = androidx.compose.ui.graphics.Color(state.selectedColor).copy(alpha = 0.4f)
+                                    val clippedStartX = start.x.coerceIn(b.offsetX, b.offsetX + b.renderedWidth)
+                                    val clippedStartY = start.y.coerceIn(b.offsetY, b.offsetY + b.renderedHeight)
+                                    val clippedEndX = end.x.coerceIn(b.offsetX, b.offsetX + b.renderedWidth)
+                                    val clippedEndY = end.y.coerceIn(b.offsetY, b.offsetY + b.renderedHeight)
+                                    val drawLeft = minOf(clippedStartX, clippedEndX)
+                                    val drawTop = minOf(clippedStartY, clippedEndY)
+                                    val drawWidth = kotlin.math.abs(clippedEndX - clippedStartX)
+                                    val drawHeight = kotlin.math.abs(clippedEndY - clippedStartY)
+                                    drawRect(
+                                        color = color,
+                                        topLeft = Offset(drawLeft, drawTop),
+                                        size = Size(drawWidth, drawHeight)
+                                    )
+                                }
                             }
                         }
                     }
