@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.johnathaningle.easynotes"
+    namespace = "com.johnathaningle.excerpter"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.johnathaningle.easynotes"
+        applicationId = "com.johnathaningle.excerpter"
         minSdk = 24
         targetSdk = 37
         versionCode = 1
@@ -18,11 +18,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(project.findProperty("RELEASE_STORE_FILE") as? String ?: "release.keystore")
+            storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as? String ?: ""
+            keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as? String ?: ""
+            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as? String ?: ""
+        }
+    }
+
     buildTypes {
         release {
             optimization {
                 enable = false
             }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

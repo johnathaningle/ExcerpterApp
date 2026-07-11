@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "EasyNotes"
+rootProject.name = "Excerpter"
 include(":app")
