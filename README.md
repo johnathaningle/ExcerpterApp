@@ -1,11 +1,15 @@
-<p align="center">
-  <img src="images/icon.png" width="128" alt="Excerpter icon"/>
-</p>
-
-# Excerpter
-[![CI](https://github.com/johnathaningle/ExcerpterApp/actions/workflows/ci.yml/badge.svg)](https://github.com/johnathaningle/ExcerpterApp/actions/workflows/ci.yml)
-
-PDF note taking and annotation made easy. Open any PDF, highlight text with customizable colors, attach notes, and export your annotations as a text file.
+<table>
+  <tr>
+    <td>
+      <h1>Excerpter</h1>
+      <p>PDF note taking and annotation made easy. Open any PDF, highlight text with customizable colors, attach notes, and export your annotations as a text file.</p>
+      <a href="https://github.com/johnathaningle/ExcerpterApp/actions/workflows/ci.yml"><img src="https://github.com/johnathaningle/ExcerpterApp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    </td>
+    <td>
+      <img src="images/icont.png" width="128" alt="Excerpter icon"/>
+    </td>
+  </tr>
+</table>
 
 ## Installation
 
