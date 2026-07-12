@@ -37,9 +37,6 @@ interface AnnotationDao {
     @Query("SELECT * FROM annotations WHERE pdfUri = :pdfUri")
     suspend fun getAllAnnotationsForPdf(pdfUri: String): List<Annotation>
 
-    @Query("SELECT * FROM annotations WHERE timestamp >= :startTime")
-    suspend fun getAnnotationsSince(startTime: Long): List<Annotation>
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAnnotation(annotation: Annotation): Long
 

@@ -33,9 +33,6 @@ class PdfRepository(
     suspend fun getAllAnnotationsForPdf(pdfUri: String): List<Annotation> =
         annotationDao.getAllAnnotationsForPdf(pdfUri)
 
-    suspend fun getAnnotationsSince(startTime: Long): List<Annotation> =
-        annotationDao.getAnnotationsSince(startTime)
-
     suspend fun insertAnnotation(annotation: Annotation): Long =
         annotationDao.insertAnnotation(annotation)
 
