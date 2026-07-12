@@ -19,20 +19,26 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file(project.findProperty("RELEASE_STORE_FILE") as? String ?: "release.keystore")
-            storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as? String ?: ""
-            keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as? String ?: ""
-            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as? String ?: ""
+        val releaseStoreFile = project.findProperty("RELEASE_STORE_FILE") as? String
+        if (!releaseStoreFile.isNullOrEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile)
+                storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as? String ?: ""
+                keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as? String ?: ""
+                keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as? String ?: ""
+            }
         }
     }
 
     buildTypes {
         release {
+            val releaseStoreFile = project.findProperty("RELEASE_STORE_FILE") as? String
+            if (!releaseStoreFile.isNullOrEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }
-            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
