@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -27,7 +28,9 @@ data class ViewerState(
     val redoStack: List<Annotation> = emptyList(),
     val isScrollLocked: Boolean = false,
     val selectedColor: Long = 0xFFFF0000,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val scale: Float = 1f,
+    val offset: Offset = Offset.Zero
 )
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
@@ -94,7 +97,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateTransform(scale: Float, offset: Offset) {
+        _state.value = _state.value.copy(scale = scale, offset = offset)
+    }
+
+    fun resetTransform() {
+        _state.value = _state.value.copy(scale = 1f, offset = Offset.Zero)
+    }
+
     fun renderPage(pageIndex: Int) {
+        resetTransform()
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 val renderer = pdfRenderer ?: return@withContext

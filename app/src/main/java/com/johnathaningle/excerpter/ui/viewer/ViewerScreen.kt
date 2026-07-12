@@ -5,8 +5,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -14,10 +12,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -149,105 +152,198 @@ fun ViewerScreen(
                 }
             } ?: state.pageBitmap?.let { bitmap ->
                 val imageBitmap = bitmap.asImageBitmap()
-                var dragOffsetX by remember { mutableFloatStateOf(0f) }
                 val swipeThreshold = with(LocalDensity.current) { 100.dp.toPx() }
                 var composableSize by remember { mutableStateOf(IntSize.Zero) }
+                val currentState by rememberUpdatedState(state)
+
+                val bitmapWidth = bitmap.width.toFloat()
+                val bitmapHeight = bitmap.height.toFloat()
+
+                val renderedBounds = remember(composableSize, bitmapWidth, bitmapHeight) {
+                    if (composableSize.width == 0 || composableSize.height == 0 ||
+                        bitmapWidth == 0f || bitmapHeight == 0f
+                    ) {
+                        null
+                    } else {
+                        val cw = composableSize.width.toFloat()
+                        val ch = composableSize.height.toFloat()
+                        val scale = minOf(cw / bitmapWidth, ch / bitmapHeight)
+                        val rw = bitmapWidth * scale
+                        val rh = bitmapHeight * scale
+                        val ox = (cw - rw) / 2f
+                        val oy = (ch - rh) / 2f
+                        RenderedBitmapBounds(ox, oy, rw, rh)
+                    }
+                }
 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .onSizeChanged { composableSize = it }
-                ) {
-                    val bitmapWidth = bitmap.width.toFloat()
-                    val bitmapHeight = bitmap.height.toFloat()
-
-                    val renderedBounds = remember(composableSize, bitmapWidth, bitmapHeight) {
-                        if (composableSize.width == 0 || composableSize.height == 0 ||
-                            bitmapWidth == 0f || bitmapHeight == 0f
-                        ) {
-                            null
-                        } else {
-                            val cw = composableSize.width.toFloat()
-                            val ch = composableSize.height.toFloat()
-                            val scale = minOf(cw / bitmapWidth, ch / bitmapHeight)
-                            val rw = bitmapWidth * scale
-                            val rh = bitmapHeight * scale
-                            val ox = (cw - rw) / 2f
-                            val oy = (ch - rh) / 2f
-                            RenderedBitmapBounds(ox, oy, rw, rh)
+                        .graphicsLayer {
+                            transformOrigin = TransformOrigin(0f, 0f)
+                            scaleX = currentState.scale
+                            scaleY = currentState.scale
+                            translationX = currentState.offset.x
+                            translationY = currentState.offset.y
                         }
-                    }
+                        .pointerInput(pdfUri, state.currentPage, state.isScrollLocked, state.selectedColor) {
+                            awaitPointerEventScope {
+                                val activePointers = mutableMapOf<PointerId, Offset>()
+                                var isZooming = false
+                                var zoomStartDistance = 0f
+                                var zoomStartScale = 1f
+                                var zoomStartOffset = Offset.Zero
+                                var zoomStartCentroid = Offset.Zero
+                                var isDragging = false
+                                var dragStartPos = Offset.Zero
+                                var lastDragPos = Offset.Zero
+                                var pastTouchSlop = false
 
-                    Image(
-                        bitmap = imageBitmap,
-                        contentDescription = "PDF page ${state.currentPage + 1}",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(pdfUri, state.currentPage, state.isScrollLocked) {
-                                if (!state.isScrollLocked) {
-                                    detectHorizontalDragGestures(
-                                        onDragStart = { _ -> },
-                                        onDragEnd = { },
-                                        onDragCancel = { dragOffsetX = 0f },
-                                        onHorizontalDrag = { _, dragAmount ->
-                                            dragOffsetX += dragAmount
-                                            if (dragOffsetX > swipeThreshold) {
-                                                viewModel.previousPage()
-                                                dragOffsetX = 0f
-                                            } else if (dragOffsetX < -swipeThreshold) {
-                                                viewModel.nextPage()
-                                                dragOffsetX = 0f
-                                            }
+                                while (true) {
+                                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+
+                                    for (change in event.changes) {
+                                        if (change.pressed) {
+                                            activePointers[change.id] = change.position
+                                        } else {
+                                            activePointers.remove(change.id)
                                         }
-                                    )
-                                }
-                            }
-                            .pointerInput(pdfUri, state.currentPage, state.isScrollLocked, state.selectedColor) {
-                                if (state.isScrollLocked) {
-                                    detectDragGestures(
-                                        onDragStart = { offset ->
-                                            longPressStart = offset
-                                            longPressEnd = offset
-                                        },
-                                        onDrag = { change, _ ->
-                                            longPressEnd = change.position
-                                            change.consume()
-                                        },
-                                        onDragEnd = {
-                                            val start = longPressStart
-                                            val end = longPressEnd
-                                            longPressStart = null
-                                            longPressEnd = null
+                                    }
 
-                                            if (start != null && end != null && renderedBounds != null) {
+                                    val count = activePointers.size
+
+                                    when {
+                                        count >= 2 && !currentState.isScrollLocked -> {
+                                            if (!isZooming) {
+                                                isZooming = true
+                                                isDragging = false
+                                                pastTouchSlop = false
+                                                val positions = activePointers.values.toList()
+                                                zoomStartDistance = (positions[0] - positions[1]).getDistance()
+                                                zoomStartScale = currentState.scale
+                                                zoomStartOffset = currentState.offset
+                                                zoomStartCentroid = (positions[0] + positions[1]) / 2f
+                                            }
+
+                                            val positions = activePointers.values.toList()
+                                            val currentDistance = (positions[0] - positions[1]).getDistance()
+                                            val currentCentroid = (positions[0] + positions[1]) / 2f
+
+                                            val rawZoom = currentDistance / zoomStartDistance
+                                            val newScale = (zoomStartScale * rawZoom).coerceIn(1f, 5f)
+                                            val actualZoom = if (zoomStartScale > 0f) newScale / zoomStartScale else 1f
+                                            val pan = currentCentroid - zoomStartCentroid
+
+                                            viewModel.updateTransform(
+                                                newScale,
+                                                Offset(
+                                                    x = zoomStartOffset.x * actualZoom + zoomStartCentroid.x * (1f - actualZoom) + pan.x,
+                                                    y = zoomStartOffset.y * actualZoom + zoomStartCentroid.y * (1f - actualZoom) + pan.y
+                                                )
+                                            )
+                                            event.changes.forEach { it.consume() }
+                                        }
+
+                                        count == 1 -> {
+                                            val pos = activePointers.values.first()
+
+                                            if (isZooming) {
+                                                isZooming = false
+                                                isDragging = true
+                                                dragStartPos = pos
+                                                lastDragPos = pos
+                                                pastTouchSlop = false
+                                            }
+
+                                            if (!isDragging) {
+                                                isDragging = true
+                                                dragStartPos = pos
+                                                lastDragPos = pos
+                                                pastTouchSlop = false
+                                            }
+
+                                            val totalDrag = (pos - dragStartPos).getDistance()
+                                            if (!pastTouchSlop && totalDrag > viewConfiguration.touchSlop) {
+                                                pastTouchSlop = true
+                                            }
+
+                                            if (pastTouchSlop) {
+                                                if (currentState.isScrollLocked) {
+                                                    longPressStart = dragStartPos
+                                                    longPressEnd = pos
+                                                } else if (currentState.scale <= 1.01f) {
+                                                    val dx = pos.x - dragStartPos.x
+                                                    if (dx > swipeThreshold) {
+                                                        viewModel.previousPage()
+                                                        isDragging = false
+                                                        pastTouchSlop = false
+                                                        dragStartPos = pos
+                                                        lastDragPos = pos
+                                                    } else if (dx < -swipeThreshold) {
+                                                        viewModel.nextPage()
+                                                        isDragging = false
+                                                        pastTouchSlop = false
+                                                        dragStartPos = pos
+                                                        lastDragPos = pos
+                                                    }
+                                                } else {
+                                                    val panDelta = pos - lastDragPos
+                                                    viewModel.updateTransform(
+                                                        currentState.scale,
+                                                        currentState.offset + panDelta
+                                                    )
+                                                }
+                                                lastDragPos = pos
+                                            }
+
+                                            event.changes.forEach { it.consume() }
+                                        }
+
+                                        count == 0 -> {
+                                            if (currentState.isScrollLocked && pastTouchSlop &&
+                                                longPressStart != null && longPressEnd != null
+                                            ) {
+                                                val start = longPressStart!!
+                                                val end = longPressEnd!!
                                                 val b = renderedBounds
-                                                if (b.renderedWidth > 0 && b.renderedHeight > 0) {
+                                                if (b != null && b.renderedWidth > 0 && b.renderedHeight > 0) {
                                                     val sx = ((start.x - b.offsetX) / b.renderedWidth).coerceIn(0f, 1f)
                                                     val sy = ((start.y - b.offsetY) / b.renderedHeight).coerceIn(0f, 1f)
                                                     val ex = ((end.x - b.offsetX) / b.renderedWidth).coerceIn(0f, 1f)
                                                     val ey = ((end.y - b.offsetY) / b.renderedHeight).coerceIn(0f, 1f)
-                                                    viewModel.addAnnotation(
-                                                        Annotation(
-                                                            pdfUri = pdfUri,
-                                                            pageNumber = state.currentPage,
-                                                            startX = sx,
-                                                            startY = sy,
-                                                            endX = ex,
-                                                            endY = ey,
-                                                            color = state.selectedColor
+                                                    if (kotlin.math.abs(ex - sx) > 0.01f && kotlin.math.abs(ey - sy) > 0.01f) {
+                                                        viewModel.addAnnotation(
+                                                            Annotation(
+                                                                pdfUri = pdfUri,
+                                                                pageNumber = currentState.currentPage,
+                                                                startX = sx,
+                                                                startY = sy,
+                                                                endX = ex,
+                                                                endY = ey,
+                                                                color = currentState.selectedColor
+                                                            )
                                                         )
-                                                    )
+                                                    }
                                                 }
                                             }
-                                        },
-                                        onDragCancel = {
+                                            isZooming = false
+                                            isDragging = false
+                                            pastTouchSlop = false
                                             longPressStart = null
                                             longPressEnd = null
+                                            activePointers.clear()
                                         }
-                                    )
+                                    }
                                 }
-                            },
-                        contentScale = ContentScale.Fit
+                            }
+                        }
+                ) {
+                    Image(
+                        bitmap = imageBitmap,
+                        contentDescription = "PDF page ${state.currentPage + 1}",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
                     )
 
                     // Annotation overlay
