@@ -29,5 +29,6 @@ data class Annotation(
     val color: Long,
     val text: String = "",
     val note: String = "",
+    val heading: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )

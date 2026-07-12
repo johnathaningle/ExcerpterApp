@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.johnathaningle.excerpter.data.model.Annotation
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // Where the PDF bitmap is drawn on screen, after ContentScale.Fit centers it
 // within the composable. Used to convert between screen coords and normalized
@@ -49,6 +52,7 @@ fun ViewerScreen(
     viewModel: ViewerViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val scope = rememberCoroutineScope()
     var showExportDialog by remember { mutableStateOf(false) }
     var showHighlightsDialog by remember { mutableStateOf(false) }
     // Screen-space start/end of the current highlight drag. Set during drag when
@@ -57,6 +61,7 @@ fun ViewerScreen(
     var longPressStart by remember { mutableStateOf<Offset?>(null) }
     var longPressEnd by remember { mutableStateOf<Offset?>(null) }
     var showColorPicker by remember { mutableStateOf(false) }
+    var annotationForNote by remember { mutableStateOf<Annotation?>(null) }
 
     LaunchedEffect(pdfUri) {
         viewModel.loadPdf(pdfUri)
@@ -73,7 +78,7 @@ fun ViewerScreen(
         HighlightsDialog(
             annotations = state.annotations,
             onDelete = { viewModel.deleteAnnotation(it) },
-            onUpdateNote = { annotation, note -> viewModel.updateNote(annotation, note) },
+            onEditNote = { annotationForNote = it },
             onNavigateToPage = { page ->
                 viewModel.goToPage(page)
                 showHighlightsDialog = false
@@ -89,6 +94,17 @@ fun ViewerScreen(
                 showColorPicker = false
             },
             onDismiss = { showColorPicker = false }
+        )
+    }
+
+    annotationForNote?.let { annotation ->
+        NoteDialog(
+            annotation = annotation,
+            onDismiss = { annotationForNote = null },
+            onSave = { heading, note ->
+                viewModel.updateNoteAndHeading(annotation, heading, note)
+                annotationForNote = null
+            }
         )
     }
 
@@ -230,6 +246,9 @@ fun ViewerScreen(
                                 var dragStartPos = Offset.Zero   // where the current drag began
                                 var lastDragPos = Offset.Zero    // previous frame position (for pan delta)
                                 var pastTouchSlop = false        // true once finger moved far enough to count as a gesture
+                                // --- Long-press on annotation state ---
+                                var isLongPressing = false
+                                var longPressTimerJob: Job? = null
 
                                 while (true) {
                                     val event = awaitPointerEvent(pass = PointerEventPass.Initial)
@@ -308,6 +327,32 @@ fun ViewerScreen(
                                             val totalDrag = (pos - dragStartPos).getDistance()
                                             if (!pastTouchSlop && totalDrag > viewConfiguration.touchSlop) {
                                                 pastTouchSlop = true
+                                                longPressTimerJob?.cancel()
+                                                longPressTimerJob = null
+                                            }
+
+                                            // Long-press detection: if finger hasn't moved past
+                                            // slop, start a 500ms timer. If it fires, check if
+                                            // the touch landed on an annotation.
+                                            if (!pastTouchSlop && !isLongPressing && longPressTimerJob == null) {
+                                                val b = renderedBounds
+                                                if (b != null && b.renderedWidth > 0 && b.renderedHeight > 0) {
+                                                    val startPos = pos
+                                                    longPressTimerJob = scope.launch {
+                                                        delay(500)
+                                                        val nx = ((startPos.x - b.offsetX) / b.renderedWidth).coerceIn(0f, 1f)
+                                                        val ny = ((startPos.y - b.offsetY) / b.renderedHeight).coerceIn(0f, 1f)
+                                                        val hit = currentState.annotations.find { ann ->
+                                                            ann.pageNumber == currentState.currentPage &&
+                                                                    nx in minOf(ann.startX, ann.endX)..maxOf(ann.startX, ann.endX) &&
+                                                                    ny in minOf(ann.startY, ann.endY)..maxOf(ann.startY, ann.endY)
+                                                        }
+                                                        if (hit != null) {
+                                                            isLongPressing = true
+                                                            annotationForNote = hit
+                                                        }
+                                                    }
+                                                }
                                             }
 
                                             if (pastTouchSlop) {
@@ -389,6 +434,9 @@ fun ViewerScreen(
                                             pastTouchSlop = false
                                             longPressStart = null
                                             longPressEnd = null
+                                            isLongPressing = false
+                                            longPressTimerJob?.cancel()
+                                            longPressTimerJob = null
                                             activePointers.clear()
                                         }
                                     }

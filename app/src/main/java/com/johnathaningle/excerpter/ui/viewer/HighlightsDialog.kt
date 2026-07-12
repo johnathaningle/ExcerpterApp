@@ -22,48 +22,10 @@ import com.johnathaningle.excerpter.data.model.Annotation
 fun HighlightsDialog(
     annotations: List<Annotation>,
     onDelete: (Annotation) -> Unit,
-    onUpdateNote: (Annotation, String) -> Unit,
+    onEditNote: (Annotation) -> Unit,
     onNavigateToPage: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var editingAnnotation by remember { mutableStateOf<Annotation?>(null) }
-    var noteText by remember { mutableStateOf("") }
-
-    if (editingAnnotation != null) {
-        AlertDialog(
-            onDismissRequest = {
-                editingAnnotation = null
-                noteText = ""
-            },
-            title = { Text("Add Note") },
-            text = {
-                OutlinedTextField(
-                    value = noteText,
-                    onValueChange = { noteText = it },
-                    label = { Text("Your note") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    editingAnnotation?.let { onUpdateNote(it, noteText) }
-                    editingAnnotation = null
-                    noteText = ""
-                }) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    editingAnnotation = null
-                    noteText = ""
-                }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -99,11 +61,12 @@ fun HighlightsDialog(
                     ) {
                         items(annotations, key = { it.id }) { annotation ->
                             val displayText = when {
+                                annotation.heading.isNotBlank() -> annotation.heading
                                 annotation.note.isNotBlank() -> annotation.note
                                 annotation.text.isNotBlank() -> annotation.text
                                 else -> "[Empty Text]"
                             }
-                            val isNote = annotation.note.isNotBlank()
+                            val isNote = annotation.heading.isNotBlank() || annotation.note.isNotBlank()
 
                             ListItem(
                                 headlineContent = {
@@ -148,8 +111,7 @@ fun HighlightsDialog(
                                         onNavigateToPage(annotation.pageNumber)
                                     },
                                     onLongClick = {
-                                        editingAnnotation = annotation
-                                        noteText = annotation.note
+                                        onEditNote(annotation)
                                     }
                                 )
                             )
