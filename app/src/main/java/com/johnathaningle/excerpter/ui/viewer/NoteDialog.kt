@@ -63,19 +63,6 @@ fun NoteDialog(
                         singleLine = true
                     )
 
-                    if (annotation.text.isNotBlank()) {
-                        Text(
-                            text = annotation.text,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 120.dp)
-                                .padding(vertical = 4.dp)
-                        )
-                        HorizontalDivider()
-                    }
-
                     OutlinedTextField(
                         value = note,
                         onValueChange = { note = it },
