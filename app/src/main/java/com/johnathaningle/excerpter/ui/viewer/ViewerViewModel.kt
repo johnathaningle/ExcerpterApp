@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -27,7 +28,9 @@ data class ViewerState(
     val redoStack: List<Annotation> = emptyList(),
     val isScrollLocked: Boolean = false,
     val selectedColor: Long = 0xFFFF0000,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val scale: Float = 1f,
+    val offset: Offset = Offset.Zero
 )
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
@@ -61,6 +64,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     // Update document record
                     val existing = repository.getDocument(uri)
+                    val startPage = existing?.lastPage ?: 0
                     if (existing == null) {
                         repository.insertDocument(
                             com.johnathaningle.excerpter.data.model.PdfDocument(
@@ -75,10 +79,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     _state.value = _state.value.copy(
                         pageCount = renderer.pageCount,
-                        currentPage = 0
+                        currentPage = startPage
                     )
 
-                    renderPage(0)
+                    renderPage(startPage)
                 } catch (e: Exception) {
                     Log.e("ViewerViewModel", "Failed to open PDF: $uri", e)
                     _state.value = _state.value.copy(
@@ -94,7 +98,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateTransform(scale: Float, offset: Offset) {
+        _state.value = _state.value.copy(scale = scale, offset = offset)
+    }
+
+    fun resetTransform() {
+        _state.value = _state.value.copy(scale = 1f, offset = Offset.Zero)
+    }
+
     fun renderPage(pageIndex: Int) {
+        resetTransform()
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 val renderer = pdfRenderer ?: return@withContext
@@ -119,6 +132,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         currentPage = pageIndex,
                         pageBitmap = bitmap
                     )
+
+                    currentPdfUri?.let { uri ->
+                        repository.updateLastPage(uri, pageIndex)
+                    }
                 }
             }
         }
@@ -231,6 +248,30 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun updateNote(annotation: Annotation, note: String) {
         viewModelScope.launch {
             val updated = annotation.copy(note = note)
+            repository.updateAnnotation(updated)
+            _state.value = _state.value.copy(
+                annotations = _state.value.annotations.map {
+                    if (it.id == annotation.id) updated else it
+                }
+            )
+        }
+    }
+
+    fun updateHeading(annotation: Annotation, heading: String) {
+        viewModelScope.launch {
+            val updated = annotation.copy(heading = heading)
+            repository.updateAnnotation(updated)
+            _state.value = _state.value.copy(
+                annotations = _state.value.annotations.map {
+                    if (it.id == annotation.id) updated else it
+                }
+            )
+        }
+    }
+
+    fun updateNoteAndHeading(annotation: Annotation, heading: String, note: String) {
+        viewModelScope.launch {
+            val updated = annotation.copy(heading = heading, note = note)
             repository.updateAnnotation(updated)
             _state.value = _state.value.copy(
                 annotations = _state.value.annotations.map {

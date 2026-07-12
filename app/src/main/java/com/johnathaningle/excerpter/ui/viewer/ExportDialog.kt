@@ -35,27 +35,22 @@ fun ExportDialog(
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Text(
-                    text = "Export Annotations",
+                    text = "Export All Annotations",
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Choose what to export:",
+                    text = "Export all annotations as Markdown to your Downloads folder?",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Today's notes
                 Button(
                     onClick = {
                         isExporting = true
                         scope.launch {
-                            exportAnnotations(
-                                context = context,
-                                pdfUri = pdfUri,
-                                todayOnly = true
-                            )
+                            exportAnnotations(context, pdfUri)
                             isExporting = false
                             onDismiss()
                         }
@@ -63,34 +58,11 @@ fun ExportDialog(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !isExporting
                 ) {
-                    Text("Today's notes")
+                    Text("Export")
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // All notes
-                OutlinedButton(
-                    onClick = {
-                        isExporting = true
-                        scope.launch {
-                            exportAnnotations(
-                                context = context,
-                                pdfUri = pdfUri,
-                                todayOnly = false
-                            )
-                            isExporting = false
-                            onDismiss()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isExporting
-                ) {
-                    Text("All notes")
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Cancel
                 TextButton(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
@@ -110,29 +82,13 @@ fun ExportDialog(
 
 private suspend fun exportAnnotations(
     context: Context,
-    pdfUri: String,
-    todayOnly: Boolean
+    pdfUri: String
 ) {
     withContext(Dispatchers.IO) {
         try {
             val app = context.applicationContext as ExcerpterApp
-            val startTime = if (todayOnly) {
-                val cal = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-                cal.timeInMillis
-            } else {
-                0L
-            }
-
-            val annotations = if (todayOnly) {
-                app.repository.getAnnotationsSince(startTime)
-            } else {
-                app.repository.getAllAnnotationsForPdf(pdfUri)
-            }
+            val pdfName = app.repository.getDocument(pdfUri)?.fileName ?: "document"
+            val annotations = app.repository.getAllAnnotationsForPdf(pdfUri)
 
             if (annotations.isEmpty()) {
                 withContext(Dispatchers.Main) {
@@ -142,44 +98,27 @@ private suspend fun exportAnnotations(
             }
 
             val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
-            val fileName = "excerpter_export_${dateFormat.format(Date())}.txt"
+            val fileName = "excerpter_export_${dateFormat.format(Date())}.md"
 
             val contentBuilder = StringBuilder()
-            contentBuilder.append("Excerpter Export\n")
-            contentBuilder.append("Generated: ${dateFormat.format(Date())}\n")
-            contentBuilder.append("PDF: $pdfUri\n")
-            contentBuilder.append("Total annotations: ${annotations.size}\n")
-            contentBuilder.append("\n--- Annotations ---\n\n")
+            contentBuilder.append("# $pdfName Notes:\n\n")
 
             annotations.groupBy { it.pageNumber }.forEach { (page, pageAnnotations) ->
-                contentBuilder.append("Page ${page + 1}:\n")
+                contentBuilder.append("## Page ${page + 1}\n\n")
                 pageAnnotations.forEach { ann ->
-                    val colorName = when (ann.color) {
-                        0xFFFF0000L -> "Red"
-                        0xFF00C853L -> "Green"
-                        0xFFFFEB3BL -> "Yellow"
-                        0xFF2196F3L -> "Blue"
-                        0xFF9C27B0L -> "Purple"
-                        else -> "Custom"
+                    if (ann.heading.isNotBlank()) {
+                        contentBuilder.append("**${ann.heading}**\n\n")
                     }
-                    val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-                        .format(Date(ann.timestamp))
-                    contentBuilder.append("  [$time] Color: $colorName\n")
                     if (ann.note.isNotBlank()) {
-                        contentBuilder.append("  Note: \"${ann.note}\"\n")
+                        contentBuilder.append("${ann.note}\n\n")
                     }
-                    if (ann.text.isNotBlank()) {
-                        contentBuilder.append("  Text: \"${ann.text}\"\n")
-                    }
-                    contentBuilder.append("\n")
                 }
-                contentBuilder.append("\n")
             }
 
             val resolver = context.contentResolver
             val contentValues = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.MIME_TYPE, "text/markdown")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 }

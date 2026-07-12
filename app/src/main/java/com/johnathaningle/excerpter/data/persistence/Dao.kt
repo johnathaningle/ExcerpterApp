@@ -24,6 +24,9 @@ interface PdfDocumentDao {
 
     @Query("UPDATE pdf_documents SET lastOpened = :timestamp WHERE uri = :uri")
     suspend fun updateLastOpened(uri: String, timestamp: Long)
+
+    @Query("UPDATE pdf_documents SET lastPage = :page WHERE uri = :uri")
+    suspend fun updateLastPage(uri: String, page: Int)
 }
 
 @Dao
@@ -36,9 +39,6 @@ interface AnnotationDao {
 
     @Query("SELECT * FROM annotations WHERE pdfUri = :pdfUri")
     suspend fun getAllAnnotationsForPdf(pdfUri: String): List<Annotation>
-
-    @Query("SELECT * FROM annotations WHERE timestamp >= :startTime")
-    suspend fun getAnnotationsSince(startTime: Long): List<Annotation>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAnnotation(annotation: Annotation): Long

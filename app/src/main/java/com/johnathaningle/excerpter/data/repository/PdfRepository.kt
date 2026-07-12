@@ -24,6 +24,10 @@ class PdfRepository(
         documentDao.updateLastOpened(uri, System.currentTimeMillis())
     }
 
+    suspend fun updateLastPage(uri: String, page: Int) {
+        documentDao.updateLastPage(uri, page)
+    }
+
     fun getAnnotationsForPdf(pdfUri: String): Flow<List<Annotation>> =
         annotationDao.getAnnotationsForPdf(pdfUri)
 
@@ -32,9 +36,6 @@ class PdfRepository(
 
     suspend fun getAllAnnotationsForPdf(pdfUri: String): List<Annotation> =
         annotationDao.getAllAnnotationsForPdf(pdfUri)
-
-    suspend fun getAnnotationsSince(startTime: Long): List<Annotation> =
-        annotationDao.getAnnotationsSince(startTime)
 
     suspend fun insertAnnotation(annotation: Annotation): Long =
         annotationDao.insertAnnotation(annotation)
