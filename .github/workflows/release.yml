@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name (e.g. 1.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > excerpter.keystore
+
+      - name: Build signed release APK
+        run: |
+          ./gradlew assembleRelease \
+            -PRELEASE_STORE_FILE=excerpter.keystore \
+            -PRELEASE_STORE_PASSWORD="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -PRELEASE_KEY_ALIAS="${{ secrets.KEY_ALIAS }}" \
+            -PRELEASE_KEY_PASSWORD="${{ secrets.KEY_PASSWORD }}"
+
+      - name: Rename APK
+        run: |
+          mv app/build/outputs/apk/release/app-release.apk \
+             Excerpter-${{ github.ref_name }}.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Excerpter-*.apk
+          generate_release_notes: true
