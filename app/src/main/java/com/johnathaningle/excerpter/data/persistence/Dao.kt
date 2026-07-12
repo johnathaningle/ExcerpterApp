@@ -24,6 +24,9 @@ interface PdfDocumentDao {
 
     @Query("UPDATE pdf_documents SET lastOpened = :timestamp WHERE uri = :uri")
     suspend fun updateLastOpened(uri: String, timestamp: Long)
+
+    @Query("UPDATE pdf_documents SET lastPage = :page WHERE uri = :uri")
+    suspend fun updateLastPage(uri: String, page: Int)
 }
 
 @Dao

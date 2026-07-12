@@ -64,6 +64,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     // Update document record
                     val existing = repository.getDocument(uri)
+                    val startPage = existing?.lastPage ?: 0
                     if (existing == null) {
                         repository.insertDocument(
                             com.johnathaningle.excerpter.data.model.PdfDocument(
@@ -78,10 +79,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     _state.value = _state.value.copy(
                         pageCount = renderer.pageCount,
-                        currentPage = 0
+                        currentPage = startPage
                     )
 
-                    renderPage(0)
+                    renderPage(startPage)
                 } catch (e: Exception) {
                     Log.e("ViewerViewModel", "Failed to open PDF: $uri", e)
                     _state.value = _state.value.copy(
@@ -131,6 +132,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         currentPage = pageIndex,
                         pageBitmap = bitmap
                     )
+
+                    currentPdfUri?.let { uri ->
+                        repository.updateLastPage(uri, pageIndex)
+                    }
                 }
             }
         }
