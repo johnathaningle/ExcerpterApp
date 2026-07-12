@@ -307,8 +307,8 @@ fun ViewerScreen(
                 }
             }
 
-            // Page navigation arrows
-            if (state.currentPage > 0) {
+            // Page navigation arrows (hidden when scroll is locked for highlighting)
+            if (!state.isScrollLocked && state.currentPage > 0) {
                 IconButton(
                     onClick = { viewModel.previousPage() },
                     modifier = Modifier
@@ -323,7 +323,7 @@ fun ViewerScreen(
                 }
             }
 
-            if (state.currentPage < state.pageCount - 1) {
+            if (!state.isScrollLocked && state.currentPage < state.pageCount - 1) {
                 IconButton(
                     onClick = { viewModel.nextPage() },
                     modifier = Modifier
