@@ -31,6 +31,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.johnathaningle.excerpter.data.model.Annotation
 
+// Where the PDF bitmap is drawn on screen, after ContentScale.Fit centers it
+// within the composable. Used to convert between screen coords and normalized
+// (0..1) annotation coords stored in the database.
 private data class RenderedBitmapBounds(
     val offsetX: Float,
     val offsetY: Float,
@@ -48,6 +51,9 @@ fun ViewerScreen(
     val state by viewModel.state.collectAsState()
     var showExportDialog by remember { mutableStateOf(false) }
     var showHighlightsDialog by remember { mutableStateOf(false) }
+    // Screen-space start/end of the current highlight drag. Set during drag when
+    // scroll-locked, read by the preview Canvas and the annotation-save logic on
+    // finger-up. Null when no drag is active.
     var longPressStart by remember { mutableStateOf<Offset?>(null) }
     var longPressEnd by remember { mutableStateOf<Offset?>(null) }
     var showColorPicker by remember { mutableStateOf(false) }
@@ -159,6 +165,11 @@ fun ViewerScreen(
                 val bitmapWidth = bitmap.width.toFloat()
                 val bitmapHeight = bitmap.height.toFloat()
 
+                // Calculate where ContentScale.Fit places the bitmap inside the
+                // composable. The bitmap is scaled to fit and centered, so there
+                // may be padding on the sides. These bounds let us convert
+                // screen-space touch positions into normalized (0..1) annotation
+                // coordinates relative to the actual bitmap area.
                 val renderedBounds = remember(composableSize, bitmapWidth, bitmapHeight) {
                     if (composableSize.width == 0 || composableSize.height == 0 ||
                         bitmapWidth == 0f || bitmapHeight == 0f
@@ -176,6 +187,16 @@ fun ViewerScreen(
                     }
                 }
 
+                // The content Box holds the PDF image, annotation overlay, and
+                // highlight preview. graphicsLayer handles pinch-to-zoom/pan
+                // visually; pointerInput handles all touch gestures below.
+                //
+                // TransformOrigin(0f, 0f) pins the transform to the top-left
+                // corner so that scale/offset math stays simple:
+                //   screen = layout * scale + offset
+                // Pointer events are NOT affected by graphicsLayer — they are
+                // always in layout-space coordinates, so no inverse transform
+                // is needed when creating highlights.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -187,18 +208,28 @@ fun ViewerScreen(
                             translationX = currentState.offset.x
                             translationY = currentState.offset.y
                         }
+                        // Unified gesture handler. We use awaitPointerEventScope
+                        // (not detectTransformGestures) so we can combine pinch-
+                        // to-zoom, single-finger pan/page-swipe, and highlight
+                        // drawing in one handler.
+                        //
+                        // Keys: restarting on uri, page, lock, or color change
+                        // resets all gesture state cleanly.
                         .pointerInput(pdfUri, state.currentPage, state.isScrollLocked, state.selectedColor) {
                             awaitPointerEventScope {
+                                // Track all active touch pointers by ID.
                                 val activePointers = mutableMapOf<PointerId, Offset>()
+                                // --- Zoom state ---
                                 var isZooming = false
-                                var zoomStartDistance = 0f
-                                var zoomStartScale = 1f
-                                var zoomStartOffset = Offset.Zero
-                                var zoomStartCentroid = Offset.Zero
+                                var zoomStartDistance = 0f   // finger distance at pinch start
+                                var zoomStartScale = 1f      // scale when pinch started
+                                var zoomStartOffset = Offset.Zero // offset when pinch started
+                                var zoomStartCentroid = Offset.Zero // finger midpoint at pinch start
+                                // --- Drag / swipe / highlight state ---
                                 var isDragging = false
-                                var dragStartPos = Offset.Zero
-                                var lastDragPos = Offset.Zero
-                                var pastTouchSlop = false
+                                var dragStartPos = Offset.Zero   // where the current drag began
+                                var lastDragPos = Offset.Zero    // previous frame position (for pan delta)
+                                var pastTouchSlop = false        // true once finger moved far enough to count as a gesture
 
                                 while (true) {
                                     val event = awaitPointerEvent(pass = PointerEventPass.Initial)
@@ -213,7 +244,10 @@ fun ViewerScreen(
 
                                     val count = activePointers.size
 
+                                    // Main gesture dispatch based on active finger count.
                                     when {
+                                        // Two+ fingers, not locked → pinch-to-zoom + pan.
+                                        // Zoom is disabled when scroll-locked (highlight mode).
                                         count >= 2 && !currentState.isScrollLocked -> {
                                             if (!isZooming) {
                                                 isZooming = true
@@ -230,9 +264,12 @@ fun ViewerScreen(
                                             val currentDistance = (positions[0] - positions[1]).getDistance()
                                             val currentCentroid = (positions[0] + positions[1]) / 2f
 
+                                            // Pinch ratio → new scale, clamped 1x–5x.
                                             val rawZoom = currentDistance / zoomStartDistance
                                             val newScale = (zoomStartScale * rawZoom).coerceIn(1f, 5f)
                                             val actualZoom = if (zoomStartScale > 0f) newScale / zoomStartScale else 1f
+                                            // Offset is adjusted so the zoom is anchored to the
+                                            // centroid of the two fingers (the midpoint stays fixed).
                                             val pan = currentCentroid - zoomStartCentroid
 
                                             viewModel.updateTransform(
@@ -245,9 +282,12 @@ fun ViewerScreen(
                                             event.changes.forEach { it.consume() }
                                         }
 
+                                        // Single finger — could be a highlight drag, page swipe, or pan.
                                         count == 1 -> {
                                             val pos = activePointers.values.first()
 
+                                            // Transition from zoom to single-finger: reset drag state
+                                            // so the first frame doesn't register as a big swipe.
                                             if (isZooming) {
                                                 isZooming = false
                                                 isDragging = true
@@ -263,6 +303,8 @@ fun ViewerScreen(
                                                 pastTouchSlop = false
                                             }
 
+                                            // Ignore small movements — wait until the finger has
+                                            // moved past the system touch slop before acting.
                                             val totalDrag = (pos - dragStartPos).getDistance()
                                             if (!pastTouchSlop && totalDrag > viewConfiguration.touchSlop) {
                                                 pastTouchSlop = true
@@ -270,9 +312,15 @@ fun ViewerScreen(
 
                                             if (pastTouchSlop) {
                                                 if (currentState.isScrollLocked) {
+                                                    // Highlight mode: record the drag path in
+                                                    // screen coords. These are converted to
+                                                    // normalized bitmap coords on finger-up.
                                                     longPressStart = dragStartPos
                                                     longPressEnd = pos
                                                 } else if (currentState.scale <= 1.01f) {
+                                                    // Not locked, at 1x zoom → horizontal swipe
+                                                    // changes page. Uses the total drag distance
+                                                    // from the start position (not incremental).
                                                     val dx = pos.x - dragStartPos.x
                                                     if (dx > swipeThreshold) {
                                                         viewModel.previousPage()
@@ -288,6 +336,8 @@ fun ViewerScreen(
                                                         lastDragPos = pos
                                                     }
                                                 } else {
+                                                    // Zoomed in (scale > 1), not locked → pan.
+                                                    // Incremental delta from last frame.
                                                     val panDelta = pos - lastDragPos
                                                     viewModel.updateTransform(
                                                         currentState.scale,
@@ -300,7 +350,12 @@ fun ViewerScreen(
                                             event.changes.forEach { it.consume() }
                                         }
 
+                                        // Finger lifted — finalize any in-progress gesture.
                                         count == 0 -> {
+                                            // If we were highlight-dragging, save the annotation.
+                                            // Convert screen coords → normalized bitmap coords
+                                            // using renderedBounds (accounts for ContentScale.Fit
+                                            // centering and padding).
                                             if (currentState.isScrollLocked && pastTouchSlop &&
                                                 longPressStart != null && longPressEnd != null
                                             ) {
@@ -308,10 +363,12 @@ fun ViewerScreen(
                                                 val end = longPressEnd!!
                                                 val b = renderedBounds
                                                 if (b != null && b.renderedWidth > 0 && b.renderedHeight > 0) {
+                                                    // Normalize: (screen - bitmapOffset) / bitmapSize → 0..1
                                                     val sx = ((start.x - b.offsetX) / b.renderedWidth).coerceIn(0f, 1f)
                                                     val sy = ((start.y - b.offsetY) / b.renderedHeight).coerceIn(0f, 1f)
                                                     val ex = ((end.x - b.offsetX) / b.renderedWidth).coerceIn(0f, 1f)
                                                     val ey = ((end.y - b.offsetY) / b.renderedHeight).coerceIn(0f, 1f)
+                                                    // Ignore tiny accidental drags (< 1% of the page).
                                                     if (kotlin.math.abs(ex - sx) > 0.01f && kotlin.math.abs(ey - sy) > 0.01f) {
                                                         viewModel.addAnnotation(
                                                             Annotation(
@@ -360,7 +417,9 @@ fun ViewerScreen(
                         )
                     }
 
-                    // Highlight preview while dragging
+                    // Highlight preview: semi-transparent rectangle drawn while
+                    // the user drags in highlight mode. Clipped to the bitmap
+                    // bounds so it doesn't extend into the padding area.
                     longPressStart?.let { start ->
                         longPressEnd?.let { end ->
                             renderedBounds?.let { b ->
