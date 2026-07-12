@@ -87,6 +87,7 @@ private suspend fun exportAnnotations(
     withContext(Dispatchers.IO) {
         try {
             val app = context.applicationContext as ExcerpterApp
+            val pdfName = app.repository.getDocument(pdfUri)?.fileName ?: "document"
             val annotations = app.repository.getAllAnnotationsForPdf(pdfUri)
 
             if (annotations.isEmpty()) {
@@ -99,7 +100,6 @@ private suspend fun exportAnnotations(
             val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
             val fileName = "excerpter_export_${dateFormat.format(Date())}.md"
 
-            val pdfName = android.net.Uri.parse(pdfUri).lastPathSegment ?: "document"
             val contentBuilder = StringBuilder()
             contentBuilder.append("# $pdfName Notes:\n\n")
 
