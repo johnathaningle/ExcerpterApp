@@ -74,6 +74,7 @@ dependencies {
 
     implementation(libs.pdfbox.android)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation(libs.mediapipe.llm.inference)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
