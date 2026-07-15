@@ -17,7 +17,14 @@ object MlKitTextExtractor {
 
     private const val TAG = "MlKitTextExtractor"
 
-    private val recognizer: TextRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var _recognizer: TextRecognizer? = null
+    private val recognizer: TextRecognizer
+        get() = synchronized(this) {
+            if (_recognizer == null) {
+                _recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            }
+            _recognizer!!
+        }
 
     fun extractTextFromRegion(
         context: Context,
@@ -102,7 +109,8 @@ object MlKitTextExtractor {
         }
     }
 
-    fun close() {
-        recognizer.close()
+    fun close() = synchronized(this) {
+        _recognizer?.close()
+        _recognizer = null
     }
 }
