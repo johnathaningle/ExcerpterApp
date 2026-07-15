@@ -84,8 +84,13 @@ object MlKitTextExtractor {
                 regionBitmap.recycle()
                 if (task.isSuccessful) {
                     val visionText = task.result
-                    Log.d(TAG, "Extracted text: ${visionText.text}")
-                    visionText.text
+                    val cleanedText = visionText.text
+                        .replace("\r\n", " ")
+                        .replace("\n", " ")
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                    Log.d(TAG, "Extracted text: $cleanedText")
+                    cleanedText
                 } else {
                     Log.e(TAG, "Text recognition failed", task.exception)
                     throw task.exception ?: Exception("Text recognition failed")
