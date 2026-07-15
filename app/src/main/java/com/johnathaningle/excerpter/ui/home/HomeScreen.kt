@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,6 +42,7 @@ fun HomeScreen(
 ) {
     val documents by viewModel.documents.collectAsState()
     var showDeleteDialog by remember { mutableStateOf<PdfDocument?>(null) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -71,7 +73,12 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Excerpter") }
+                title = { Text("Excerpter") },
+                actions = {
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -130,6 +137,35 @@ fun HomeScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = null }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showSettingsDialog) {
+        var autoRotate by remember { mutableStateOf(viewModel.autoRotateColor) }
+        AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = { Text("Settings") },
+            text = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Auto-rotate highlight color")
+                    Switch(
+                        checked = autoRotate,
+                        onCheckedChange = {
+                            autoRotate = it
+                            viewModel.autoRotateColor = it
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSettingsDialog = false }) {
+                    Text("Done")
                 }
             }
         )

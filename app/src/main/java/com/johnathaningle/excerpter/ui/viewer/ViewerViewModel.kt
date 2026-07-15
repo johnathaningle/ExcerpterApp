@@ -11,6 +11,7 @@ import com.johnathaningle.excerpter.ExcerpterApp
 import com.johnathaningle.excerpter.data.model.Annotation
 import com.johnathaningle.excerpter.util.MlKitTextExtractor
 import com.johnathaningle.excerpter.util.SessionPreferences
+import com.johnathaningle.excerpter.ui.viewer.highlightColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,8 +44,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private var pdfRenderer: PdfRenderer? = null
     private var currentFileDescriptor: android.os.ParcelFileDescriptor? = null
     private var currentPdfUri: String? = null
+    private val colorHistory = mutableListOf<Long>()
 
     val selectedColor: Long get() = sessionPrefs.lastSelectedColor
+    val autoRotateColor: Boolean get() = sessionPrefs.autoRotateColor
 
     fun loadPdf(uri: String) {
         viewModelScope.launch {
@@ -171,6 +174,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 redoStack = emptyList()
             )
 
+            if (autoRotateColor) {
+                colorHistory.add(_state.value.selectedColor)
+                val currentIndex = highlightColors.indexOfFirst { it.color == _state.value.selectedColor }
+                val nextIndex = (currentIndex + 1) % highlightColors.size
+                setSelectedColor(highlightColors[nextIndex].color)
+            }
+
             val uri = currentPdfUri ?: return@launch
             val context = getApplication<Application>().applicationContext
             val extractedText = withContext(Dispatchers.IO) {
@@ -215,6 +225,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 undoStack = undoStack.dropLast(1),
                 redoStack = _state.value.redoStack + last
             )
+            if (autoRotateColor && colorHistory.isNotEmpty()) {
+                val previousColor = colorHistory.removeLast()
+                setSelectedColor(previousColor)
+            }
         }
     }
 
@@ -231,6 +245,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 undoStack = _state.value.undoStack + restored,
                 redoStack = redoStack.dropLast(1)
             )
+            if (autoRotateColor) {
+                colorHistory.add(_state.value.selectedColor)
+                setSelectedColor(last.color)
+            }
         }
     }
 
@@ -284,6 +302,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun setSelectedColor(color: Long) {
         sessionPrefs.lastSelectedColor = color
         _state.value = _state.value.copy(selectedColor = color)
+    }
+
+    fun setAutoRotateColor(enabled: Boolean) {
+        sessionPrefs.autoRotateColor = enabled
     }
 
     fun toggleScrollLock() {
