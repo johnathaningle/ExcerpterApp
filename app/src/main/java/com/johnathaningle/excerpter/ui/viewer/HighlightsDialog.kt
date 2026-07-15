@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,27 @@ fun HighlightsDialog(
     onNavigateToPage: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    var isAscending by remember { mutableStateOf(true) }
+
+    val filteredAndSortedAnnotations = remember(annotations, searchQuery, isAscending) {
+        val query = searchQuery.trim().lowercase()
+        val filtered = if (query.isEmpty()) {
+            annotations
+        } else {
+            annotations.filter { annotation ->
+                annotation.heading.lowercase().contains(query) ||
+                annotation.note.lowercase().contains(query) ||
+                annotation.text.lowercase().contains(query) ||
+                "page ${annotation.pageNumber + 1}".contains(query)
+            }
+        }
+        if (isAscending) {
+            filtered.sortedBy { it.pageNumber }
+        } else {
+            filtered.sortedByDescending { it.pageNumber }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -34,13 +58,44 @@ fun HighlightsDialog(
                 .fillMaxHeight(0.7f)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = "Highlights",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(16.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Highlights",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    IconButton(onClick = { isAscending = !isAscending }) {
+                        Icon(
+                            imageVector = if (isAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                            contentDescription = if (isAscending) "Sort ascending" else "Sort descending"
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    placeholder = { Text("Search highlights...") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Search"
+                        )
+                    },
+                    singleLine = true
                 )
 
-                if (annotations.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (filteredAndSortedAnnotations.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -48,7 +103,7 @@ fun HighlightsDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No highlights yet",
+                            text = if (annotations.isEmpty()) "No highlights yet" else "No matching highlights",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -59,7 +114,7 @@ fun HighlightsDialog(
                             .fillMaxWidth()
                             .weight(1f)
                     ) {
-                        items(annotations, key = { it.id }) { annotation ->
+                        items(filteredAndSortedAnnotations, key = { it.id }) { annotation ->
                             val displayText = when {
                                 annotation.heading.isNotBlank() -> annotation.heading
                                 annotation.note.isNotBlank() -> annotation.note

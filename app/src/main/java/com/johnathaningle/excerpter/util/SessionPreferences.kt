@@ -15,8 +15,13 @@ class SessionPreferences(context: Context) {
         get() = prefs.getLong(KEY_LAST_COLOR, 0xFFFF0000)
         set(value) = prefs.edit().putLong(KEY_LAST_COLOR, value).apply()
 
+    var autoRotateColor: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_ROTATE, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_ROTATE, value).apply()
+
     companion object {
         private const val KEY_LAST_OPENED_PDF = "last_opened_pdf"
         private const val KEY_LAST_COLOR = "last_selected_color"
+        private const val KEY_AUTO_ROTATE = "auto_rotate_color"
     }
 }
