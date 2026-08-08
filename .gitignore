@@ -46,7 +46,8 @@ captures/
 Thumbs.db
 
 # Project specific
-.kotlin/
-.opencode/
-CONTEXT.md
+.*
+!.github/
+*.md
+!README.md
 opt/
