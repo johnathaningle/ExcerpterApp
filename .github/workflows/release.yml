@@ -25,6 +25,9 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Install NDK
+        run: sdkmanager "ndk;28.2.13676358"
+
       - name: Decode keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > excerpter.keystore
 

@@ -1,67 +1,92 @@
 package com.johnathaningle.excerpter.util
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
-import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
+import io.aatricks.llmedge.text.runtime.SmolLM
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.URL
 
 object LlmService {
     private const val TAG = "LlmService"
-    private const val MODEL_URL = "https://huggingface.co/datasets/calm2026/litert-pack-2c3e55/resolve/main/gemma3-270m-it-q8.task"
-    private const val MODEL_FILE = "gemma3-270m-it-q8.task"
+    private val GGUF_MAGIC = byteArrayOf(0x47, 0x47, 0x55, 0x46) // "GGUF"
 
-    private var _llm: LlmInference? = null
+    private var _llm: SmolLM? = null
 
     fun isAvailable(): Boolean = _llm != null
 
-    private fun modelFile(context: Context): File =
-        File(context.filesDir, MODEL_FILE)
-
-    fun isModelOnDevice(context: Context): Boolean =
-        modelFile(context).exists()
-
-    fun modelFileSize(context: Context): Long =
-        modelFile(context).length()
-
-    fun initialize(context: Context): Result<Unit> = runCatching {
-        if (_llm != null) return@runCatching
-        val options = LlmInferenceOptions.builder()
-            .setModelPath(modelFile(context).absolutePath)
-            .setMaxTokens(1024)
-            .setMaxTopK(40)
-            .build()
-        _llm = LlmInference.createFromOptions(context, options)
-        Log.i(TAG, "LLM initialized")
+    /**
+     * The GGUF to load: the stored path first (app-private, so it is always fopen-able),
+     * then a model pushed into filesDir by the dev gradle task. canRead() is not enough
+     * to trust a path — scoped storage reports public-Downloads paths as readable but
+     * open() then fails with EACCES — so verify by actually reading the GGUF header.
+     */
+    fun findModelPath(context: Context): String? {
+        SessionPreferences(context).modelPath
+            ?.takeIf { canReadGguf(it) }
+            ?.let { return it }
+        return context.filesDir.listFiles()
+            ?.firstOrNull { it.extension.equals("gguf", ignoreCase = true) }
+            ?.let { if (canReadGguf(it.absolutePath)) it.absolutePath else null }
     }
 
-    fun downloadModel(context: Context, onProgress: (Float) -> Unit): Result<Unit> = runCatching {
-        val file = modelFile(context)
-        if (file.exists()) {
-            onProgress(1f)
-            return@runCatching
+    private fun canReadGguf(path: String): Boolean = runCatching {
+        FileInputStream(File(path)).use { input ->
+            val magic = ByteArray(4)
+            input.read(magic) == 4 && magic.contentEquals(GGUF_MAGIC)
         }
-        file.parentFile?.mkdirs()
-        URL(MODEL_URL).openConnection().let { conn ->
-            conn.connect()
-            val total = conn.contentLengthLong
-            conn.getInputStream().use { input ->
-                FileOutputStream(file).use { output ->
-                    val buf = ByteArray(8192)
-                    var read: Int
-                    var totalRead = 0L
-                    while (input.read(buf).also { read = it } != -1) {
-                        output.write(buf, 0, read)
-                        totalRead += read
-                        if (total > 0) onProgress(totalRead.toFloat() / total.toFloat())
-                    }
-                }
-            }
+    }.getOrDefault(false)
+
+    fun isModelConfigured(context: Context): Boolean = findModelPath(context) != null
+
+    suspend fun initialize(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (_llm != null) return@runCatching
+            val path = findModelPath(context)
+                ?: throw IllegalStateException("No model configured")
+            val useVulkan = SessionPreferences(context).useVulkan
+            val llm = SmolLM(useVulkan = useVulkan)
+            // chatTemplate/contextSize stay null: llmedge reads them from the GGUF metadata.
+            val params = SmolLM.InferenceParams(
+                storeChats = false,
+                thinkingMode = SmolLM.ThinkingMode.DISABLED,
+                nGpuLayers = if (useVulkan) 99 else 0 // 99 = all layers
+            )
+            llm.load(path, params)
+            _llm = llm
+            Log.i(TAG, "LLM initialized from $path (${if (useVulkan) "Vulkan GPU" else "CPU only"})")
+        }.onFailure { e ->
+            Log.e(TAG, "LLM load failed: ${findModelPath(context) ?: "no model path"}", e)
         }
-        onProgress(1f)
-        Log.i(TAG, "Model downloaded (${file.length() / 1_000_000} MB)")
+    }
+
+    /** True if the first four bytes of the file are the GGUF magic number. */
+    fun isGgufFile(context: Context, uri: Uri): Boolean = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val magic = ByteArray(4)
+            input.read(magic) == 4 && magic.contentEquals(GGUF_MAGIC)
+        } ?: false
+    }.getOrDefault(false)
+
+    fun displayName(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }.getOrNull()
+
+    // ponytail: fallback only when _data isn't exposed (rare on the Downloads provider);
+    // keeps the model loadable while sacrificing the "external storage" promise.
+    fun copyToInternal(context: Context, uri: Uri): String? {
+        val dest = File(context.filesDir, displayName(context, uri) ?: "model.gguf")
+        return runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(dest).use { input.copyTo(it) }
+            } ?: return null
+            dest.absolutePath
+        }.getOrNull()
     }
 
     fun summarize(text: String): Result<String> = runCatching {
@@ -71,7 +96,17 @@ object LlmService {
 $text
 
 Summary:"""
-        llm.generateResponse(prompt)
+        llm.getResponse(prompt, maxTokens = 512)
+    }.onFailure { e ->
+        Log.e(TAG, "LLM summarize failed", e)
+    }
+
+    fun generateHeading(text: String): Result<String> = runCatching {
+        val llm = _llm ?: throw IllegalStateException("LLM not initialized")
+        val prompt = "Topic of this text, 2-4 words, no punctuation:\n\n${text.take(400)}"
+        llm.getResponse(prompt, maxTokens = 32)
+    }.onFailure { e ->
+        Log.e(TAG, "LLM heading generation failed", e)
     }
 
     fun close() {

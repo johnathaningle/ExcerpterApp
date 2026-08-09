@@ -10,12 +10,16 @@ android {
 
     defaultConfig {
         applicationId = "com.johnathaningle.excerpter"
-        minSdk = 24
+        minSdk = 30
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -74,7 +78,12 @@ dependencies {
 
     implementation(libs.pdfbox.android)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    implementation(libs.mediapipe.llm.inference)
+    implementation(libs.llmedge) {
+        exclude(group = "io.gitlab.shubham0204", module = "sentence-embeddings")
+    }
+    // vision-internal-vkp 18.2.2 (pulled transitively by text-recognition) ships a 4KB-aligned
+    // libmlkitcommonpipeline.so; 18.2.3 is 16KB-aligned. Pin it or 16KB-page devices crash.
+    implementation("com.google.mlkit:vision-internal-vkp:18.2.3")
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -84,3 +93,33 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+val llmModelPath = (project.findProperty("LLM_MODEL_PATH") as? String)
+    ?: "/home/grey/.lmstudio/models/lmstudio-community/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf"
+val llmModelName = "gemma-4-E2B-it-Q4_K_M.gguf"
+val sdkDir = rootProject.file("local.properties")
+    .takeIf { it.exists() }
+    ?.readLines()
+    ?.firstOrNull { it.startsWith("sdk.dir=") }
+    ?.substringAfter("=")
+    ?.trim()
+    ?: System.getenv("ANDROID_HOME")
+val adb = "$sdkDir/platform-tools/adb"
+
+// Push the local GGUF into the app's filesDir after install so the model is present
+// without re-downloading. Override the path with -PLLM_MODEL_PATH=/path/to/model.gguf
+val pushLlmModelTmp = tasks.register<Exec>("pushLlmModelTmp") {
+    group = "install"
+    commandLine(adb, "push", llmModelPath, "/data/local/tmp/$llmModelName")
+}
+val pushLlmModel = tasks.register<Exec>("pushLlmModel") {
+    group = "install"
+    description = "Push the local GGUF model into the app's files dir"
+    dependsOn(pushLlmModelTmp)
+    val script = "mkdir -p files && cp /data/local/tmp/$llmModelName files/$llmModelName"
+    commandLine(
+        adb, "shell", "run-as", "com.johnathaningle.excerpter", "sh", "-c",
+        "\"$script\""
+    )
+}
+tasks.matching { it.name.startsWith("install") }.configureEach { finalizedBy(pushLlmModel) }

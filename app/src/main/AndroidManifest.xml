@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Needed to fopen GGUF models in the public Downloads folder from native llama.cpp. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <application
         android:name=".ExcerpterApp"
@@ -13,7 +17,9 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Excerpter">
+        android:theme="@style/Theme.Excerpter"
+        android:pageSizeCompat="disabled"
+        tools:ignore="UnusedAttribute">
         <activity
             android:name=".MainActivity"
             android:exported="true"

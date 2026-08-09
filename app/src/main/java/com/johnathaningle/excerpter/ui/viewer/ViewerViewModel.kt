@@ -11,6 +11,7 @@ import com.johnathaningle.excerpter.ExcerpterApp
 import com.johnathaningle.excerpter.data.model.Annotation
 import com.johnathaningle.excerpter.util.MlKitTextExtractor
 import com.johnathaningle.excerpter.util.SessionPreferences
+import com.johnathaningle.excerpter.util.LlmService
 import com.johnathaningle.excerpter.ui.viewer.highlightColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +32,8 @@ data class ViewerState(
     val selectedColor: Long = 0xFFFF0000,
     val errorMessage: String? = null,
     val scale: Float = 1f,
-    val offset: Offset = Offset.Zero
+    val offset: Offset = Offset.Zero,
+    val llmError: String? = null
 )
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
@@ -312,10 +314,75 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.value = _state.value.copy(isScrollLocked = !_state.value.isScrollLocked)
     }
 
+    fun initLlm() {
+        if (LlmService.isAvailable()) return
+        viewModelScope.launch {
+            val ctx = getApplication<Application>().applicationContext
+            val result = withContext(Dispatchers.IO) {
+                if (!LlmService.isModelConfigured(ctx)) {
+                    Result.failure(IllegalStateException("No model configured. Go to Settings → AI Model."))
+                } else {
+                    LlmService.initialize(ctx)
+                }
+            }
+            result.onFailure { e ->
+                Log.e("ViewerViewModel", "LLM init failed", e)
+                _state.value = _state.value.copy(
+                    llmError = e.message ?: "Failed to load the AI model"
+                )
+            }
+        }
+    }
+
+    /** Summarizes the selected text (with document context) and returns the summary text. */
+    suspend fun summarizeSuspend(annotation: Annotation): String = withContext(Dispatchers.IO) {
+        val contextText = buildString {
+            val others = _state.value.annotations
+                .filter { it.id != annotation.id && it.text.isNotBlank() }
+            if (others.isNotEmpty()) {
+                appendLine("Related notes from this document:")
+                others.forEach { a ->
+                    val h = a.heading.ifBlank { "untitled" }
+                    appendLine("- $h: ${a.note.ifBlank { a.text }}")
+                }
+                appendLine()
+            }
+            appendLine("Selected text:")
+            append(annotation.note.ifBlank { annotation.text })
+        }
+        LlmService.summarize(contextText).getOrElse { throw it }
+    }
+
+    suspend fun generateHeadingSuspend(text: String): String = withContext(Dispatchers.IO) {
+        val raw = LlmService.generateHeading(text).getOrNull() ?: return@withContext ""
+        sanitizeHeading(raw).ifBlank { fallbackHeading(text) }
+    }
+
+    private fun sanitizeHeading(raw: String): String {
+        val cleaned = raw
+            .lines()
+            .firstOrNull()
+            ?.trim()
+            ?.trim('"')
+            ?.replace(Regex("(?i)^(topic|subject|heading|title)\\s*[-:]\\s*"), "")
+            ?.replace(Regex("[*#_`'()<>:;,]"), " ")
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?: return ""
+        if (cleaned.isBlank()) return ""
+        val words = cleaned.split(' ').filter { it.isNotBlank() }
+        if (words.size > 5) return words.take(5).joinToString(" ")
+        return cleaned
+    }
+
+    private fun fallbackHeading(text: String): String =
+        text.split(Regex("\\s+")).filter { it.isNotBlank() }.take(3).joinToString(" ")
+
     override fun onCleared() {
         super.onCleared()
         pdfRenderer?.close()
         currentFileDescriptor?.close()
         MlKitTextExtractor.close()
+        LlmService.close()
     }
 }

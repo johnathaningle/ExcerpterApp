@@ -3,18 +3,24 @@ package com.johnathaningle.excerpter.ui.home
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.core.net.toUri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -68,6 +74,31 @@ fun HomeScreen(
             viewModel.addPdf(it, fileName)
             onPdfSelected(it.toString())
         }
+    }
+
+    var modelPickerBusy by remember { mutableStateOf(false) }
+    var modelStatus by remember { mutableStateOf(viewModel.getModelStatus()) }
+    val modelPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.data?.let { uri ->
+            modelPickerBusy = true
+            viewModel.importModel(uri) { status ->
+                modelPickerBusy = false
+                modelStatus = status
+            }
+        }
+    }
+
+    fun ggufPickerIntent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "application/octet-stream"
+        putExtra(
+            DocumentsContract.EXTRA_INITIAL_URI,
+            Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            ).toUri()
+        )
     }
 
     Scaffold(
@@ -144,23 +175,161 @@ fun HomeScreen(
 
     if (showSettingsDialog) {
         var autoRotate by remember { mutableStateOf(viewModel.autoRotateColor) }
+        var useVulkan by remember { mutableStateOf(viewModel.useVulkan) }
+        var modelBusy by remember { mutableStateOf(false) }
+        var selectedModelIndex by remember { mutableStateOf<Int?>(null) }
+
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             title = { Text("Settings") },
             text = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Auto-rotate highlight color")
-                    Switch(
-                        checked = autoRotate,
-                        onCheckedChange = {
-                            autoRotate = it
-                            viewModel.autoRotateColor = it
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Auto-rotate highlight color")
+                        Switch(
+                            checked = autoRotate,
+                            onCheckedChange = {
+                                autoRotate = it
+                                viewModel.autoRotateColor = it
+                            }
+                        )
+                    }
+
+                    HorizontalDivider()
+
+                    if (!Environment.isExternalStorageManager()) {
+                        Text(
+                            text = "Downloads go to your Downloads folder. Grant storage access so Excerpter can open them.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Allow storage access")
                         }
+                    }
+
+                    Text("AI Model", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = modelStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Use Vulkan GPU")
+                            Text(
+                                text = "Offloads the model to the GPU. Requires a Vulkan-capable device; applies after restart.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = useVulkan,
+                            onCheckedChange = {
+                                useVulkan = it
+                                viewModel.useVulkan = it
+                            }
+                        )
+                    }
+
+                    Text(
+                        text = "Download a model for offline use:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    popularModels.forEachIndexed { idx, model ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedModelIndex = idx },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = idx == selectedModelIndex,
+                                onClick = { selectedModelIndex = idx }
+                            )
+                            Column {
+                                Text(
+                                    text = model.name,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "${model.sizeMb} MB",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            val option = popularModels[selectedModelIndex!!]
+                            modelBusy = true
+                            modelStatus = "Starting download..."
+                            viewModel.downloadModel(
+                                url = option.url,
+                                onProgress = { modelStatus = it },
+                                onDone = { status ->
+                                    modelStatus = status
+                                    modelBusy = false
+                                }
+                            )
+                        },
+                        enabled = selectedModelIndex != null && !modelBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (modelBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Download")
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(modifier = Modifier.weight(1f))
+                        Text(
+                            text = "OR",
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        HorizontalDivider(modifier = Modifier.weight(1f))
+                    }
+
+                    OutlinedButton(
+                        onClick = { modelPickerLauncher.launch(ggufPickerIntent()) },
+                        enabled = !modelPickerBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Import a .gguf file from storage")
+                    }
                 }
             },
             confirmButton = {

@@ -12,7 +12,7 @@ navigationCompose = "2.9.0"
 room = "2.7.1"
 pdfbox = "2.0.27.0"
 ksp = "2.2.10-2.0.2"
-mediapipeGenai = "0.10.27"
+llmedge = "0.4.7.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,7 +37,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-paging = { group = "androidx.room", name = "room-paging", version.ref = "room" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox" }
-mediapipe-llm-inference = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
+llmedge = { group = "io.github.aatricks", name = "llmedge", version.ref = "llmedge" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
