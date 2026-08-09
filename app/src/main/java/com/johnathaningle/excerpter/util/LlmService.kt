@@ -103,7 +103,7 @@ Summary:"""
 
     fun generateHeading(text: String): Result<String> = runCatching {
         val llm = _llm ?: throw IllegalStateException("LLM not initialized")
-        val prompt = "Topic of this text, 2-4 words, no punctuation:\n\n${text.take(400)}"
+        val prompt = """Write a short, witty title for this note, the way a chat app names a conversation — clever and specific to what it's about. 3-5 words, no punctuation, no quotes, no explanation. Note: ${text.take(400)} Title:"""
         llm.getResponse(prompt, maxTokens = 32)
     }.onFailure { e ->
         Log.e(TAG, "LLM heading generation failed", e)
