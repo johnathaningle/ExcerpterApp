@@ -5,11 +5,13 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.johnathaningle.excerpter.ui.home.HomeScreen
+import com.johnathaningle.excerpter.ui.settings.SettingsScreen
 import com.johnathaningle.excerpter.ui.viewer.ViewerScreen
 
 object Routes {
     const val HOME = "home"
     const val VIEWER = "viewer"
+    const val SETTINGS = "settings"
 }
 
 object PdfHolder {
@@ -30,8 +32,13 @@ fun AppNavigation(
                 onPdfSelected = { uri ->
                     PdfHolder.currentUri = uri
                     navController.navigate(Routes.VIEWER)
-                }
+                },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
             )
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Routes.VIEWER) {

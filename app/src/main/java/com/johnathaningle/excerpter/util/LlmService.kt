@@ -24,6 +24,7 @@ object LlmService {
     )
 
     private var _engine: Engine? = null
+    private val initLock = Any()
 
     fun isAvailable(): Boolean = _engine != null
 
@@ -53,21 +54,26 @@ object LlmService {
 
     suspend fun initialize(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            if (_engine != null) return@runCatching
-            val path = findModelPath(context)
-                ?: throw IllegalStateException("No model configured")
-            val useGpu = SessionPreferences(context).useVulkan
-            val engine = Engine(
-                EngineConfig(
-                    modelPath = path,
-                    backend = if (useGpu) Backend.GPU() else Backend.CPU(),
-                    // Writable cache dir speeds up subsequent model loads.
-                    cacheDir = context.cacheDir.absolutePath
+            // Locked so the launch-time preload, the post-download load and the viewer
+            // lazy-load can't build two engines at once.
+            synchronized(initLock) {
+                if (_engine != null) return@runCatching
+                val path = findModelPath(context)
+                    ?: throw IllegalStateException("No model configured")
+                val useGpu = SessionPreferences(context).useVulkan
+                val engine = Engine(
+                    EngineConfig(
+                        modelPath = path,
+                        backend = if (useGpu) Backend.GPU() else Backend.CPU(),
+                        // Writable cache dir speeds up subsequent model loads.
+                        cacheDir = context.cacheDir.absolutePath
+                    )
                 )
-            )
-            engine.initialize()
-            _engine = engine
-            Log.i(TAG, "LLM initialized from $path (${if (useGpu) "GPU" else "CPU"})")
+                engine.initialize()
+                _engine = engine
+                Log.i(TAG, "LLM initialized from $path (${if (useGpu) "GPU" else "CPU"})")
+                Unit
+            }
         }.onFailure { e ->
             Log.e(TAG, "LLM load failed: ${findModelPath(context) ?: "no model path"}", e)
         }
