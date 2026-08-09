@@ -4,7 +4,11 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
-import io.aatricks.llmedge.text.runtime.SmolLM
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -13,31 +17,35 @@ import java.io.FileOutputStream
 
 object LlmService {
     private const val TAG = "LlmService"
-    private val GGUF_MAGIC = byteArrayOf(0x47, 0x47, 0x55, 0x46) // "GGUF"
+    // .litertlm files start with an 8-byte "LITERTLM" container magic; the TFLite
+    // "TFL3" shards are embedded further inside, so this is what we validate.
+    private val LITERTLM_MAGIC = byteArrayOf(
+        0x4C, 0x49, 0x54, 0x45, 0x52, 0x54, 0x4C, 0x4D // "LITERTLM"
+    )
 
-    private var _llm: SmolLM? = null
+    private var _engine: Engine? = null
 
-    fun isAvailable(): Boolean = _llm != null
+    fun isAvailable(): Boolean = _engine != null
 
     /**
-     * The GGUF to load: the stored path first (app-private, so it is always fopen-able),
+     * The model to load: the stored path first (app-private, so it is always fopen-able),
      * then a model pushed into filesDir by the dev gradle task. canRead() is not enough
      * to trust a path — scoped storage reports public-Downloads paths as readable but
-     * open() then fails with EACCES — so verify by actually reading the GGUF header.
+     * open() then fails with EACCES — so verify by actually reading the model header.
      */
     fun findModelPath(context: Context): String? {
         SessionPreferences(context).modelPath
-            ?.takeIf { canReadGguf(it) }
+            ?.takeIf { canReadModel(it) }
             ?.let { return it }
         return context.filesDir.listFiles()
-            ?.firstOrNull { it.extension.equals("gguf", ignoreCase = true) }
-            ?.let { if (canReadGguf(it.absolutePath)) it.absolutePath else null }
+            ?.firstOrNull { it.extension.equals("litertlm", ignoreCase = true) }
+            ?.let { if (canReadModel(it.absolutePath)) it.absolutePath else null }
     }
 
-    private fun canReadGguf(path: String): Boolean = runCatching {
+    private fun canReadModel(path: String): Boolean = runCatching {
         FileInputStream(File(path)).use { input ->
-            val magic = ByteArray(4)
-            input.read(magic) == 4 && magic.contentEquals(GGUF_MAGIC)
+            val magic = ByteArray(8)
+            input.read(magic) == 8 && magic.contentEquals(LITERTLM_MAGIC)
         }
     }.getOrDefault(false)
 
@@ -45,30 +53,31 @@ object LlmService {
 
     suspend fun initialize(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            if (_llm != null) return@runCatching
+            if (_engine != null) return@runCatching
             val path = findModelPath(context)
                 ?: throw IllegalStateException("No model configured")
-            val useVulkan = SessionPreferences(context).useVulkan
-            val llm = SmolLM(useVulkan = useVulkan)
-            // chatTemplate/contextSize stay null: llmedge reads them from the GGUF metadata.
-            val params = SmolLM.InferenceParams(
-                storeChats = false,
-                thinkingMode = SmolLM.ThinkingMode.DISABLED,
-                nGpuLayers = if (useVulkan) 99 else 0 // 99 = all layers
+            val useGpu = SessionPreferences(context).useVulkan
+            val engine = Engine(
+                EngineConfig(
+                    modelPath = path,
+                    backend = if (useGpu) Backend.GPU() else Backend.CPU(),
+                    // Writable cache dir speeds up subsequent model loads.
+                    cacheDir = context.cacheDir.absolutePath
+                )
             )
-            llm.load(path, params)
-            _llm = llm
-            Log.i(TAG, "LLM initialized from $path (${if (useVulkan) "Vulkan GPU" else "CPU only"})")
+            engine.initialize()
+            _engine = engine
+            Log.i(TAG, "LLM initialized from $path (${if (useGpu) "GPU" else "CPU"})")
         }.onFailure { e ->
             Log.e(TAG, "LLM load failed: ${findModelPath(context) ?: "no model path"}", e)
         }
     }
 
-    /** True if the first four bytes of the file are the GGUF magic number. */
-    fun isGgufFile(context: Context, uri: Uri): Boolean = runCatching {
+    /** True if the first 8 bytes of the file are the "LITERTLM" container magic. */
+    fun isModelFile(context: Context, uri: Uri): Boolean = runCatching {
         context.contentResolver.openInputStream(uri)?.use { input ->
-            val magic = ByteArray(4)
-            input.read(magic) == 4 && magic.contentEquals(GGUF_MAGIC)
+            val magic = ByteArray(8)
+            input.read(magic) == 8 && magic.contentEquals(LITERTLM_MAGIC)
         } ?: false
     }.getOrDefault(false)
 
@@ -80,7 +89,7 @@ object LlmService {
     // ponytail: fallback only when _data isn't exposed (rare on the Downloads provider);
     // keeps the model loadable while sacrificing the "external storage" promise.
     fun copyToInternal(context: Context, uri: Uri): String? {
-        val dest = File(context.filesDir, displayName(context, uri) ?: "model.gguf")
+        val dest = File(context.filesDir, displayName(context, uri) ?: "model.litertlm")
         return runCatching {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(dest).use { input.copyTo(it) }
@@ -90,27 +99,39 @@ object LlmService {
     }
 
     fun summarize(text: String): Result<String> = runCatching {
-        val llm = _llm ?: throw IllegalStateException("LLM not initialized")
-        val prompt = """Summarize the following highlighted text from a PDF document. Be concise and capture the key points:
-
-$text
-
-Summary:"""
-        llm.getResponse(prompt, maxTokens = 512)
+        val engine = _engine ?: throw IllegalStateException("LLM not initialized")
+        engine.createConversation(
+            ConversationConfig(
+                systemInstruction = Contents.of(
+                    "Summarize highlighted text from a PDF document. Be concise and capture the key points."
+                ),
+                maxOutputToken = 512
+            )
+        ).use { conversation ->
+            conversation.sendMessage(text).toString()
+        }
     }.onFailure { e ->
         Log.e(TAG, "LLM summarize failed", e)
     }
 
     fun generateHeading(text: String): Result<String> = runCatching {
-        val llm = _llm ?: throw IllegalStateException("LLM not initialized")
-        val prompt = """Write a short, witty title for this note, the way a chat app names a conversation — clever and specific to what it's about. 3-5 words, no punctuation, no quotes, no explanation. Note: ${text.take(400)} Title:"""
-        llm.getResponse(prompt, maxTokens = 32)
+        val engine = _engine ?: throw IllegalStateException("LLM not initialized")
+        engine.createConversation(
+            ConversationConfig(
+                systemInstruction = Contents.of(
+                    "Write a short, witty title for this note, the way a chat app names a conversation — clever and specific to what it's about. 3-5 words, no punctuation, no quotes, no explanation."
+                ),
+                maxOutputToken = 32
+            )
+        ).use { conversation ->
+            conversation.sendMessage(text.take(400)).toString()
+        }
     }.onFailure { e ->
         Log.e(TAG, "LLM heading generation failed", e)
     }
 
     fun close() {
-        _llm?.close()
-        _llm = null
+        _engine?.close()
+        _engine = null
     }
 }

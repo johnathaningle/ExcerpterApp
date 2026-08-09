@@ -78,9 +78,7 @@ dependencies {
 
     implementation(libs.pdfbox.android)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    implementation(libs.llmedge) {
-        exclude(group = "io.gitlab.shubham0204", module = "sentence-embeddings")
-    }
+    implementation(libs.litertlm.android)
     // vision-internal-vkp 18.2.2 (pulled transitively by text-recognition) ships a 4KB-aligned
     // libmlkitcommonpipeline.so; 18.2.3 is 16KB-aligned. Pin it or 16KB-page devices crash.
     implementation("com.google.mlkit:vision-internal-vkp:18.2.3")
@@ -94,9 +92,15 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
+val llmModelName = "gemma-4-E2B-it.litertlm"
+val litertSnapshots = File(
+    "${System.getProperty("user.home")}/.cache/huggingface/hub/models--litert-community--gemma-4-E2B-it-litert-lm/snapshots"
+)
 val llmModelPath = (project.findProperty("LLM_MODEL_PATH") as? String)
-    ?: "/home/grey/.lmstudio/models/lmstudio-community/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf"
-val llmModelName = "gemma-4-E2B-it-Q4_K_M.gguf"
+    ?: litertSnapshots.listFiles()
+        ?.firstOrNull()
+        ?.let { File(it, llmModelName).absolutePath }
+    ?: "Download the model first: huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$llmModelName"
 val sdkDir = rootProject.file("local.properties")
     .takeIf { it.exists() }
     ?.readLines()
@@ -106,15 +110,15 @@ val sdkDir = rootProject.file("local.properties")
     ?: System.getenv("ANDROID_HOME")
 val adb = "$sdkDir/platform-tools/adb"
 
-// Push the local GGUF into the app's filesDir after install so the model is present
-// without re-downloading. Override the path with -PLLM_MODEL_PATH=/path/to/model.gguf
+// Push the local LiteRT-LM model into the app's filesDir after install so it is present
+// without re-downloading. Override the path with -PLLM_MODEL_PATH=/path/to/model.litertlm
 val pushLlmModelTmp = tasks.register<Exec>("pushLlmModelTmp") {
     group = "install"
     commandLine(adb, "push", llmModelPath, "/data/local/tmp/$llmModelName")
 }
 val pushLlmModel = tasks.register<Exec>("pushLlmModel") {
     group = "install"
-    description = "Push the local GGUF model into the app's files dir"
+    description = "Push the local LiteRT-LM model into the app's files dir"
     dependsOn(pushLlmModelTmp)
     val script = "mkdir -p files && cp /data/local/tmp/$llmModelName files/$llmModelName"
     commandLine(

@@ -23,26 +23,13 @@ import java.io.File
 
 data class ModelOption(val name: String, val url: String, val sizeMb: Long)
 
+// ponytail: single non-gated LiteRT-LM option; most other litert-community models require
+// HF login (gemma license) which DownloadManager can't do. Import others via file picker.
 val popularModels = listOf(
     ModelOption(
-        name = "Gemma 4 E2B (2B) Instruct Q4_K_M",
-        url = "https://huggingface.co/lmstudio-community/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
-        sizeMb = 3427
-    ),
-    ModelOption(
-        name = "SmolLM2 360M Instruct Q8",
-        url = "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf",
-        sizeMb = 386
-    ),
-    ModelOption(
-        name = "SmolLM2 1.7B Instruct Q4_K_M",
-        url = "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
-        sizeMb = 1055
-    ),
-    ModelOption(
-        name = "Qwen2.5 1.5B Instruct Q8",
-        url = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q8_0.gguf",
-        sizeMb = 1894
+        name = "Gemma 4 E2B (2B) Instruct LiteRT-LM",
+        url = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+        sizeMb = 2583
     )
 )
 
@@ -102,16 +89,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return "$name (${String.format("%.1f", File(path).length() / 1_000_000f)} MB)"
     }
 
-    /** Validate the picked GGUF and copy it into app storage so it is always readable. */
+    /** Validate the picked model and copy it into app storage so it is always readable. */
     fun importModel(uri: Uri, onDone: (String) -> Unit) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                if (!LlmService.isGgufFile(context, uri)) {
-                    Log.e(TAG, "Rejected model import: not a GGUF file ($uri)")
-                    return@withContext "Invalid file: not a GGUF model"
+                if (!LlmService.isModelFile(context, uri)) {
+                    Log.e(TAG, "Rejected model import: not a LiteRT-LM model ($uri)")
+                    return@withContext "Invalid file: not a LiteRT-LM model"
                 }
                 // Scoped storage denies raw-path access to files this app doesn't own
-                // (e.g. browser-downloaded GGUFs), so the model must live in app storage.
+                // (e.g. browser-downloaded models), so the model must live in app storage.
                 val name = LlmService.displayName(context, uri)
                 val modelPath = LlmService.copyToInternal(context, uri)
                     ?: run {
@@ -127,8 +114,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Download a GGUF via DownloadManager into the public Downloads folder.
-     * Reads back via llama.cpp require MANAGE_EXTERNAL_STORAGE ("All files access"),
+     * Download a LiteRT-LM model via DownloadManager into the public Downloads folder.
+     * Reads back via the native engine require MANAGE_EXTERNAL_STORAGE ("All files access"),
      * granted in Settings → AI Model.
      */
     fun downloadModel(url: String, onProgress: (String) -> Unit, onDone: (String) -> Unit) {
@@ -137,7 +124,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val fileName = url.substringAfterLast('/')
             val request = DownloadManager.Request(Uri.parse(url))
                 .setTitle(fileName)
-                .setDescription("GGUF model for Excerpter")
+                .setDescription("LiteRT-LM model for Excerpter")
                 .setMimeType("application/octet-stream")
                 .setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE

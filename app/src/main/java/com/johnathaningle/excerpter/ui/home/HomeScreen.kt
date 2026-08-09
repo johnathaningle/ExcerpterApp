@@ -90,7 +90,7 @@ fun HomeScreen(
         }
     }
 
-    fun ggufPickerIntent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+    fun modelPickerIntent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
         addCategory(Intent.CATEGORY_OPENABLE)
         type = "application/octet-stream"
         putExtra(
@@ -238,9 +238,9 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Use Vulkan GPU")
+                            Text("Use GPU acceleration")
                             Text(
-                                text = "Offloads the model to the GPU. Requires a Vulkan-capable device; applies after restart.",
+                                text = "Offloads the model to the GPU (OpenCL/Vulkan). Falls back to CPU if unsupported; applies after restart.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -324,11 +324,11 @@ fun HomeScreen(
                     }
 
                     OutlinedButton(
-                        onClick = { modelPickerLauncher.launch(ggufPickerIntent()) },
+                        onClick = { modelPickerLauncher.launch(modelPickerIntent()) },
                         enabled = !modelPickerBusy,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Import a .gguf file from storage")
+                        Text("Import a .litertlm model from storage")
                     }
                 }
             },
