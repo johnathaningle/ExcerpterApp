@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 class ExcerpterApp : Application() {
     val database by lazy { AppDatabase.getInstance(this) }
     val repository by lazy {
-        PdfRepository(database.pdfDocumentDao(), database.annotationDao())
+        PdfRepository(database.pdfDocumentDao(), database.annotationDao(), database.masterNoteDao())
     }
 
     override fun onCreate() {
