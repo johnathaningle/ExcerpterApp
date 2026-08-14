@@ -49,6 +49,7 @@ private data class RenderedBitmapBounds(
 fun ViewerScreen(
     pdfUri: String,
     onBack: () -> Unit,
+    onOpenMasterNote: () -> Unit,
     viewModel: ViewerViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -125,6 +126,9 @@ fun ViewerScreen(
                 actions = {
                     TextButton(onClick = { showHighlightsDialog = true }) {
                         Text("Highlights")
+                    }
+                    TextButton(onClick = onOpenMasterNote) {
+                        Text("Master Note")
                     }
                     TextButton(onClick = { showExportDialog = true }) {
                         Text("Export")

@@ -1,6 +1,9 @@
 package com.johnathaningle.excerpter.ui.viewer
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -26,6 +29,7 @@ fun NoteDialog(
 ) {
     var heading by remember { mutableStateOf(annotation.heading) }
     var note by remember { mutableStateOf(annotation.note.ifBlank { annotation.text }) }
+    var showPreview by remember { mutableStateOf(false) }
     var isGeneratingHeading by remember { mutableStateOf(false) }
     var isSummarizing by remember { mutableStateOf(false) }
     var summaryError by remember { mutableStateOf<String?>(null) }
@@ -105,15 +109,63 @@ fun NoteDialog(
                         }
                     }
 
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it },
-                        placeholder = { Text("Note") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        minLines = 5
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showPreview = false }) {
+                            Text(
+                                text = "Edit",
+                                color = if (showPreview) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            )
+                        }
+                        TextButton(onClick = { showPreview = true }) {
+                            Text(
+                                text = "Preview",
+                                color = if (showPreview) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+
+                    if (showPreview && note.isNotBlank()) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(12.dp)
+                            ) {
+                                SelectionContainer {
+                                    MarkdownBody(markdown = note, onLink = {})
+                                }
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it },
+                            placeholder = { Text("Note") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            minLines = 5
+                        )
+                    }
 
                     if (isModelAvailable) {
                         Button(
@@ -122,7 +174,10 @@ fun NoteDialog(
                                     isSummarizing = true
                                     summaryError = null
                                     runCatching { onSummarize(annotation) }
-                                        .onSuccess { note = it }
+                                        .onSuccess {
+                                            note = it
+                                            showPreview = true
+                                        }
                                         .onFailure { summaryError = it.message }
                                     isSummarizing = false
                                 }

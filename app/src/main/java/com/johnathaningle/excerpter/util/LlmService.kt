@@ -9,6 +9,7 @@ import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,6 +26,11 @@ object LlmService {
 
     private var _engine: Engine? = null
     private val initLock = Any()
+
+    // Non-greedy sampling so the model doesn't return the same canned output for
+    // every prompt (defaults are topK=0, topP=0, temperature=0 -> deterministic).
+    // Matches the values from Google's own LiteRT-LM docs example.
+    private val samplerConfig = SamplerConfig(topK = 10, topP = 0.95, temperature = 0.8)
 
     fun isAvailable(): Boolean = _engine != null
 
@@ -111,6 +117,7 @@ object LlmService {
                 systemInstruction = Contents.of(
                     "Summarize highlighted text from a PDF document. Be concise and capture the key points."
                 ),
+                samplerConfig = samplerConfig,
                 maxOutputToken = 512
             )
         ).use { conversation ->
@@ -125,8 +132,9 @@ object LlmService {
         engine.createConversation(
             ConversationConfig(
                 systemInstruction = Contents.of(
-                    "Write a short, witty title for this note, the way a chat app names a conversation — clever and specific to what it's about. 3-5 words, no punctuation, no quotes, no explanation."
+                    "Write a short, accurate, descriptive title that summarizes the main topic of the highlighted text, as a study note heading. 3-6 words. No wit, no puns, no jokes, no quotes, no punctuation, no explanation."
                 ),
+                samplerConfig = samplerConfig,
                 maxOutputToken = 32
             )
         ).use { conversation ->
@@ -134,6 +142,26 @@ object LlmService {
         }
     }.onFailure { e ->
         Log.e(TAG, "LLM heading generation failed", e)
+    }
+
+    /** Synthesizes one markdown section of the master note from a chunk of highlights. */
+    fun generateSection(prompt: String): Result<String> = runCatching {
+        val engine = _engine ?: throw IllegalStateException("LLM not initialized")
+        engine.createConversation(
+            ConversationConfig(
+                systemInstruction = Contents.of(
+                    "You are writing a structured study note from a reader's PDF highlights. " +
+                        "Synthesize the highlights into connected, concise knowledge in markdown. " +
+                        "One section at a time, always starting with a '## ' heading."
+                ),
+                samplerConfig = samplerConfig,
+                maxOutputToken = 512
+            )
+        ).use { conversation ->
+            conversation.sendMessage(prompt).toString()
+        }
+    }.onFailure { e ->
+        Log.e(TAG, "LLM section generation failed", e)
     }
 
     fun close() {

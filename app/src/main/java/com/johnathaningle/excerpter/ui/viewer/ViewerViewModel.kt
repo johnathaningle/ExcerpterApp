@@ -9,9 +9,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.johnathaningle.excerpter.ExcerpterApp
 import com.johnathaningle.excerpter.data.model.Annotation
+import com.johnathaningle.excerpter.data.model.MasterNote
 import com.johnathaningle.excerpter.util.MlKitTextExtractor
 import com.johnathaningle.excerpter.util.SessionPreferences
 import com.johnathaningle.excerpter.util.LlmService
+import com.johnathaningle.excerpter.util.MasterNoteGenerator
 import com.johnathaningle.excerpter.ui.viewer.highlightColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +22,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+data class MasterNoteGenerationState(
+    val isGenerating: Boolean = false,
+    val currentSection: Int = 0,
+    val totalSections: Int = 0,
+    val error: String? = null
+)
 
 data class ViewerState(
     val pageCount: Int = 0,
@@ -33,10 +42,16 @@ data class ViewerState(
     val errorMessage: String? = null,
     val scale: Float = 1f,
     val offset: Offset = Offset.Zero,
-    val llmError: String? = null
+    val llmError: String? = null,
+    val masterNote: MasterNote? = null,
+    val masterNoteGeneration: MasterNoteGenerationState = MasterNoteGenerationState()
 )
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
+    companion object {
+        private const val TAG = "ViewerViewModel"
+    }
+
     private val repository = (application as ExcerpterApp).repository
     private val sessionPrefs = SessionPreferences(application)
 
@@ -96,9 +111,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
 
-            // Load annotations
-            repository.getAnnotationsForPdf(uri).collect { annotations ->
-                _state.value = _state.value.copy(annotations = annotations)
+            // Load annotations and the cached master note (if any). Both are infinite
+            // Room flows, so each runs in its own coroutine — neither can block the other.
+            launch {
+                repository.getAnnotationsForPdf(uri).collect { annotations ->
+                    _state.value = _state.value.copy(annotations = annotations)
+                }
+            }
+            launch {
+                repository.getMasterNote(uri).collect { note ->
+                    _state.value = _state.value.copy(masterNote = note)
+                }
             }
         }
     }
@@ -306,6 +329,89 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.value = _state.value.copy(selectedColor = color)
     }
 
+    /** Regenerates (or builds, if none) the AI master note from all highlights, in reading order. */
+    fun generateMasterNote() {
+        viewModelScope.launch {
+            val uri = currentPdfUri
+            if (uri == null) {
+                Log.e(TAG, "generateMasterNote: no current PDF")
+                return@launch
+            }
+            _state.value = _state.value.copy(
+                masterNoteGeneration = MasterNoteGenerationState(isGenerating = true)
+            )
+
+            val annotations = withContext(Dispatchers.IO) {
+                repository.getAllAnnotationsForPdf(uri)
+            }
+            if (annotations.isEmpty()) {
+                _state.value = _state.value.copy(
+                    masterNoteGeneration = MasterNoteGenerationState(
+                        error = "No highlights yet. Highlight passages first."
+                    )
+                )
+                return@launch
+            }
+
+            val totalSections = MasterNoteGenerator.chunkAnnotations(annotations).size
+            Log.i(TAG, "generateMasterNote: ${annotations.size} highlights, $totalSections sections")
+            _state.value = _state.value.copy(
+                masterNoteGeneration = MasterNoteGenerationState(
+                    isGenerating = true,
+                    totalSections = totalSections
+                )
+            )
+
+            val fileName = withContext(Dispatchers.IO) {
+                repository.getDocument(uri)?.fileName
+            } ?: "Notes"
+
+            // Blocking LLM inference must not run on the main thread.
+            val result = withContext(Dispatchers.IO) {
+                MasterNoteGenerator.generate(annotations, fileName) { current, total ->
+                    _state.value = _state.value.copy(
+                        masterNoteGeneration = MasterNoteGenerationState(
+                            isGenerating = true,
+                            currentSection = current,
+                            totalSections = total
+                        )
+                    )
+                }
+            }
+
+            result.onSuccess { markdown ->
+                val sectionCount = MasterNoteGenerator.parseSections(markdown).size
+                val note = MasterNote(
+                    pdfUri = uri,
+                    markdown = markdown,
+                    highlightCount = annotations.size,
+                    sectionCount = sectionCount
+                )
+                withContext(Dispatchers.IO) { repository.upsertMasterNote(note) }
+                Log.i(TAG, "generateMasterNote: saved $sectionCount sections to DB")
+                _state.value = _state.value.copy(masterNoteGeneration = MasterNoteGenerationState())
+            }.onFailure { e ->
+                Log.e(TAG, "generateMasterNote failed: ${e.message}", e)
+                _state.value = _state.value.copy(
+                    masterNoteGeneration = MasterNoteGenerationState(
+                        error = e.message ?: "Master note generation failed"
+                    )
+                )
+            }
+        }
+    }
+
+    /** Jumps to the page of a highlight (used by master note source links). */
+    fun navigateToAnnotation(annotationId: Long) {
+        val ann = _state.value.annotations.find { it.id == annotationId }
+        if (ann == null) {
+            Log.w(TAG, "navigateToAnnotation: no annotation with id $annotationId")
+        } else {
+            Log.i(TAG, "navigateToAnnotation: id=$annotationId -> page ${ann.pageNumber + 1}")
+            goToPage(ann.pageNumber)
+        }
+    }
+
     fun setAutoRotateColor(enabled: Boolean) {
         sessionPrefs.autoRotateColor = enabled
     }
@@ -337,18 +443,23 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     /** Summarizes the selected text (with document context) and returns the summary text. */
     suspend fun summarizeSuspend(annotation: Annotation): String = withContext(Dispatchers.IO) {
         val contextText = buildString {
+            // Selected text FIRST so the model's attention window covers what to
+            // summarize; burying it after all related notes made the model latch
+            // onto the first highlight instead.
+            appendLine("Selected text:")
+            append(annotation.note.ifBlank { annotation.text })
+            appendLine()
+            appendLine()
             val others = _state.value.annotations
                 .filter { it.id != annotation.id && it.text.isNotBlank() }
+                .takeLast(8) // last 8 in reading order; the rest just crowds the window
             if (others.isNotEmpty()) {
-                appendLine("Related notes from this document:")
+                appendLine("Related notes from this document (context only, do not summarize these):")
                 others.forEach { a ->
                     val h = a.heading.ifBlank { "untitled" }
                     appendLine("- $h: ${a.note.ifBlank { a.text }}")
                 }
-                appendLine()
             }
-            appendLine("Selected text:")
-            append(annotation.note.ifBlank { annotation.text })
         }
         LlmService.summarize(contextText).getOrElse { throw it }
     }
