@@ -2,6 +2,7 @@ package com.johnathaningle.excerpter.data.persistence
 
 import androidx.room.*
 import com.johnathaningle.excerpter.data.model.Annotation
+import com.johnathaningle.excerpter.data.model.MasterNote
 import com.johnathaningle.excerpter.data.model.PdfDocument
 import kotlinx.coroutines.flow.Flow
 
@@ -54,4 +55,13 @@ interface AnnotationDao {
 
     @Query("DELETE FROM annotations WHERE pdfUri = :pdfUri")
     suspend fun deleteAnnotationsForPdf(pdfUri: String)
+}
+
+@Dao
+interface MasterNoteDao {
+    @Query("SELECT * FROM master_notes WHERE pdfUri = :pdfUri")
+    fun getMasterNote(pdfUri: String): Flow<MasterNote?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMasterNote(note: MasterNote)
 }

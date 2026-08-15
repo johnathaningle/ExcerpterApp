@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.johnathaningle.excerpter.ExcerpterApp
 import com.johnathaningle.excerpter.data.model.PdfDocument
 import com.johnathaningle.excerpter.util.PdfThumbnailGenerator
-import com.johnathaningle.excerpter.util.SessionPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -17,7 +16,6 @@ import kotlinx.coroutines.withContext
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as ExcerpterApp).repository
     private val context get() = getApplication<Application>()
-    private val sessionPrefs = SessionPreferences(application)
 
     val documents = repository.allDocuments
         .stateIn(
@@ -25,10 +23,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             SharingStarted.WhileSubscribed(5000),
             emptyList()
         )
-
-    var autoRotateColor: Boolean
-        get() = sessionPrefs.autoRotateColor
-        set(value) { sessionPrefs.autoRotateColor = value }
 
     fun addPdf(uri: Uri, fileName: String) {
         viewModelScope.launch {

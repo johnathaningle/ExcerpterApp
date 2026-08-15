@@ -10,12 +10,16 @@ android {
 
     defaultConfig {
         applicationId = "com.johnathaningle.excerpter"
-        minSdk = 24
+        minSdk = 30
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -53,6 +57,9 @@ android {
             useLegacyPackaging = true
         }
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -74,6 +81,10 @@ dependencies {
 
     implementation(libs.pdfbox.android)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation(libs.litertlm.android)
+    // vision-internal-vkp 18.2.2 (pulled transitively by text-recognition) ships a 4KB-aligned
+    // libmlkitcommonpipeline.so; 18.2.3 is 16KB-aligned. Pin it or 16KB-page devices crash.
+    implementation("com.google.mlkit:vision-internal-vkp:18.2.3")
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -83,3 +94,39 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+val llmModelName = "gemma-4-E2B-it.litertlm"
+val litertSnapshots = File(
+    "${System.getProperty("user.home")}/.cache/huggingface/hub/models--litert-community--gemma-4-E2B-it-litert-lm/snapshots"
+)
+val llmModelPath = (project.findProperty("LLM_MODEL_PATH") as? String)
+    ?: litertSnapshots.listFiles()
+        ?.firstOrNull()
+        ?.let { File(it, llmModelName).absolutePath }
+    ?: "Download the model first: huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$llmModelName"
+val sdkDir = rootProject.file("local.properties")
+    .takeIf { it.exists() }
+    ?.readLines()
+    ?.firstOrNull { it.startsWith("sdk.dir=") }
+    ?.substringAfter("=")
+    ?.trim()
+    ?: System.getenv("ANDROID_HOME")
+val adb = "$sdkDir/platform-tools/adb"
+
+// Push the local LiteRT-LM model into the app's filesDir after install so it is present
+// without re-downloading. Override the path with -PLLM_MODEL_PATH=/path/to/model.litertlm
+val pushLlmModelTmp = tasks.register<Exec>("pushLlmModelTmp") {
+    group = "install"
+    commandLine(adb, "push", llmModelPath, "/data/local/tmp/$llmModelName")
+}
+val pushLlmModel = tasks.register<Exec>("pushLlmModel") {
+    group = "install"
+    description = "Push the local LiteRT-LM model into the app's files dir"
+    dependsOn(pushLlmModelTmp)
+    val script = "mkdir -p files && cp /data/local/tmp/$llmModelName files/$llmModelName"
+    commandLine(
+        adb, "shell", "run-as", "com.johnathaningle.excerpter", "sh", "-c",
+        "\"$script\""
+    )
+}
+tasks.matching { it.name.startsWith("install") }.configureEach { finalizedBy(pushLlmModel) }

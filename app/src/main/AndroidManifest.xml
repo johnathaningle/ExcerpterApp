@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Needed to fopen models in the public Downloads folder from the native engine. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
     <application
         android:name=".ExcerpterApp"
         android:allowBackup="true"
@@ -11,7 +17,17 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Excerpter">
+        android:theme="@style/Theme.Excerpter"
+        android:pageSizeCompat="disabled"
+        tools:ignore="UnusedAttribute">
+        <!-- OpenCL/Vulkan support libs for the LiteRT-LM GPU backend (optional; CPU fallback works without them). -->
+        <uses-native-library
+            android:name="libvndksupport.so"
+            android:required="false" />
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
