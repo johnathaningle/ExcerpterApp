@@ -1,14 +1,17 @@
 package com.johnathaningle.excerpter.data.repository
 
 import com.johnathaningle.excerpter.data.model.Annotation
+import com.johnathaningle.excerpter.data.model.MasterNote
 import com.johnathaningle.excerpter.data.model.PdfDocument
 import com.johnathaningle.excerpter.data.persistence.AnnotationDao
+import com.johnathaningle.excerpter.data.persistence.MasterNoteDao
 import com.johnathaningle.excerpter.data.persistence.PdfDocumentDao
 import kotlinx.coroutines.flow.Flow
 
 class PdfRepository(
     private val documentDao: PdfDocumentDao,
-    private val annotationDao: AnnotationDao
+    private val annotationDao: AnnotationDao,
+    private val masterNoteDao: MasterNoteDao
 ) {
     val allDocuments: Flow<List<PdfDocument>> = documentDao.getAllDocuments()
 
@@ -48,4 +51,10 @@ class PdfRepository(
 
     suspend fun deleteAnnotationsForPdf(pdfUri: String) =
         annotationDao.deleteAnnotationsForPdf(pdfUri)
+
+    fun getMasterNote(pdfUri: String): Flow<MasterNote?> =
+        masterNoteDao.getMasterNote(pdfUri)
+
+    suspend fun upsertMasterNote(note: MasterNote) =
+        masterNoteDao.upsertMasterNote(note)
 }

@@ -6,7 +6,6 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
@@ -26,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -38,11 +38,11 @@ import java.util.*
 @Composable
 fun HomeScreen(
     onPdfSelected: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: HomeViewModel = viewModel()
 ) {
     val documents by viewModel.documents.collectAsState()
     var showDeleteDialog by remember { mutableStateOf<PdfDocument?>(null) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -75,7 +75,7 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Excerpter") },
                 actions = {
-                    IconButton(onClick = { showSettingsDialog = true }) {
+                    IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
@@ -137,35 +137,6 @@ fun HomeScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = null }) {
                     Text("Cancel")
-                }
-            }
-        )
-    }
-
-    if (showSettingsDialog) {
-        var autoRotate by remember { mutableStateOf(viewModel.autoRotateColor) }
-        AlertDialog(
-            onDismissRequest = { showSettingsDialog = false },
-            title = { Text("Settings") },
-            text = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Auto-rotate highlight color")
-                    Switch(
-                        checked = autoRotate,
-                        onCheckedChange = {
-                            autoRotate = it
-                            viewModel.autoRotateColor = it
-                        }
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSettingsDialog = false }) {
-                    Text("Done")
                 }
             }
         )

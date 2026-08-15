@@ -49,6 +49,7 @@ private data class RenderedBitmapBounds(
 fun ViewerScreen(
     pdfUri: String,
     onBack: () -> Unit,
+    onOpenMasterNote: () -> Unit,
     viewModel: ViewerViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -65,6 +66,7 @@ fun ViewerScreen(
 
     LaunchedEffect(pdfUri) {
         viewModel.loadPdf(pdfUri)
+        viewModel.initLlm()
     }
 
     if (showExportDialog) {
@@ -104,7 +106,11 @@ fun ViewerScreen(
             onSave = { heading, note ->
                 viewModel.updateNoteAndHeading(annotation, heading, note)
                 annotationForNote = null
-            }
+            },
+            onSummarize = { annotation -> viewModel.summarizeSuspend(annotation) },
+            onGenerateHeading = { text -> viewModel.generateHeadingSuspend(text) },
+            isModelAvailable = com.johnathaningle.excerpter.util.LlmService.isAvailable(),
+            modelError = state.llmError
         )
     }
 
@@ -120,6 +126,9 @@ fun ViewerScreen(
                 actions = {
                     TextButton(onClick = { showHighlightsDialog = true }) {
                         Text("Highlights")
+                    }
+                    TextButton(onClick = onOpenMasterNote) {
+                        Text("Master Note")
                     }
                     TextButton(onClick = { showExportDialog = true }) {
                         Text("Export")

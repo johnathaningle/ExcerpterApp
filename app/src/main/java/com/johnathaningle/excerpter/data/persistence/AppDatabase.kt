@@ -7,16 +7,18 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.johnathaningle.excerpter.data.model.Annotation
+import com.johnathaningle.excerpter.data.model.MasterNote
 import com.johnathaningle.excerpter.data.model.PdfDocument
 
 @Database(
-    entities = [PdfDocument::class, Annotation::class],
-    version = 6,
+    entities = [PdfDocument::class, Annotation::class, MasterNote::class],
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun pdfDocumentDao(): PdfDocumentDao
     abstract fun annotationDao(): AnnotationDao
+    abstract fun masterNoteDao(): MasterNoteDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -49,6 +51,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `master_notes` (" +
+                        "`pdfUri` TEXT NOT NULL, " +
+                        "`markdown` TEXT NOT NULL, " +
+                        "`highlightCount` INTEGER NOT NULL, " +
+                        "`sectionCount` INTEGER NOT NULL, " +
+                        "`generatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`pdfUri`), " +
+                        "FOREIGN KEY(`pdfUri`) REFERENCES `pdf_documents`(`uri`) ON DELETE CASCADE" +
+                        ")"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -58,7 +76,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "excerpter.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+                ).addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
+                    MIGRATION_6_7
+                ).build()
                 INSTANCE = instance
                 instance
             }
